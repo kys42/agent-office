@@ -1,8 +1,10 @@
-import { open, stat } from 'node:fs/promises';
+import { open, stat, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { TerminalTarget } from '../src/shared/types.js';
 import { m } from '../src/shared/i18n/index.js';
+import { withImagePaths } from '../src/shared/attachments.js';
+import { focusTarget, type TerminalHost } from './terminal-host.js';
 import {
   cleanInput,
   defaultTerminalDeps,
@@ -138,16 +140,32 @@ const cachedOrigin = codexOriginCache();
 let loaded: { at: number; home: string; value: Promise<Set<string>> } | undefined;
 
 /** Threads whose lock a live Codex process holds open: one `lsof` over the lock folder (~0.1s). */
-export async function codexLoadedThreads(deps: TerminalDeps): Promise<Set<string>> {
+export async function codexLoadedThreads(
+  deps: TerminalDeps,
+  options: { strict?: boolean } = {},
+): Promise<Set<string>> {
+  const locks = path.join(deps.codexHome, 'thread-writer-locks');
+  const directory = options.strict ? await realpath(locks).catch(() => locks) : locks;
   const out = await deps
-    .run('/usr/sbin/lsof', ['-Fcn', '+d', path.join(deps.codexHome, 'thread-writer-locks')])
-    .catch((error: { stdout?: string }) => error.stdout ?? ''); // exit 1 when nothing is open
+    // On macOS +d returns 1 even with matches if some directory entries are not open.
+    // Strict scans select Codex processes instead and filter their complete open-file list.
+    .run('/usr/sbin/lsof', options.strict ? ['-Fcn', '-c', '/^codex$/'] : ['-Fcn', '+d', directory])
+    .catch((error: { stdout?: string }) => {
+      // Queue ownership needs positive evidence; abbreviated-ID uniqueness needs a complete
+      // inventory. A timeout's partial stdout can omit another matching thread.
+      if (options.strict) throw error;
+      return error.stdout ?? ''; // exit 1 when nothing is open
+    });
   const threads = new Set<string>();
   let command = '';
   for (const line of out.split('\n')) {
     if (line.startsWith('p')) command = '';
     else if (line.startsWith('c')) command = line.slice(1);
-    else if (line.startsWith('n') && command === 'codex') {
+    else if (
+      line.startsWith('n') &&
+      command === 'codex' &&
+      (!options.strict || line.startsWith(`n${directory}${path.sep}`))
+    ) {
       const m = /\/([0-9a-f-]{36})\.lock$/i.exec(line);
       if (m && THREAD.test(m[1])) threads.add(m[1].toLowerCase());
     }
@@ -175,23 +193,29 @@ export async function findCodexThread(
   return (await loaded.value).has(nativeId.toLowerCase()) ? { threadId: nativeId } : null;
 }
 
-export function codexTarget(): TerminalTarget {
+export function codexTarget(host?: TerminalHost | null, canSend = true): TerminalTarget {
   return {
     kind: 'codex',
     label: '',
-    status: 'queue',
-    canSend: true,
-    canFocus: false,
+    status: canSend ? 'queue' : 'unavailable',
+    canSend,
+    canFocus: !!host,
+    ...(host ? { focus: focusTarget(host) } : {}),
     queues: true,
   };
 }
 
+/**
+ * `images`: absolute paths main saved. `codex queue` takes text only (it refuses `--image`), so
+ * they go as paths after the message, one per line, for Codex to open itself.
+ */
 export async function queueToCodex(
   thread: CodexThread,
   input: unknown,
   deps = defaultTerminalDeps(),
+  images: readonly string[] = [],
 ): Promise<string> {
-  const text = cleanInput(input);
+  const text = withImagePaths(cleanInput(input, { allowEmpty: images.length > 0 }), images);
   // `--flag=value` keeps a message that starts with `-` from being read as an option.
   const out = await deps.run(
     deps.bin('codex'),

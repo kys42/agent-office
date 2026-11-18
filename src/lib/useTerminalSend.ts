@@ -1,5 +1,53 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { ReplySender, SendResult } from '../shared/types';
+import { m } from '../shared/i18n';
 import { api } from './api';
+import { followDesktopSettings } from './desktop-settings';
+import { reached } from './reached';
+
+/**
+ * Sends a follow-up through the desktop app and reports a finished send (and, when the agent's
+ * composer text was cleared for it, that the text is on the clipboard). Text found in the
+ * composer comes back as `needs-confirm` for the reply box to ask about; nothing was typed.
+ */
+export async function sendFollowUp(
+  id: string,
+  text: string,
+  replaceDraft: string | undefined,
+  notify: (message: string) => void,
+  allowPartialDraft?: boolean,
+  images?: string[],
+  /** `replaceDraft` is the box's rows taken in to edit: replaced only while drawn exactly so. */
+  exactDraft?: boolean,
+): Promise<SendResult> {
+  let result: SendResult;
+  try {
+    const options = {
+      ...(replaceDraft !== undefined && {
+        replaceDraft,
+        ...(allowPartialDraft && { allowPartialDraft: true }),
+        ...(exactDraft && { exactDraft: true }),
+      }),
+      ...(images?.length && { images }),
+    };
+    result = await api.send!(id, text, Object.keys(options).length ? options : undefined);
+  } catch (error) {
+    // A failed paste/submit or an older refusal may have left text in the composer. Reading
+    // it again offers a manual decision, never a blind resend or an automatic clearing.
+    const draft = await api.inspectDraft?.(id).catch(() => null);
+    if (!draft) throw error;
+    return { ...draft, reason: (error as Error).message };
+  }
+  if (result.status === 'sent') {
+    reached(id);
+    notify(
+      result.cleared
+        ? `${result.message} · ${result.partialBackup ? m().terminal.partialClearedToClipboard : m().terminal.clearedToClipboard}`
+        : result.message,
+    );
+  }
+  return result;
+}
 
 /**
  * The desktop setting (on by default) for typing into terminals, and the send used by quick replies. Shared by
@@ -15,6 +63,8 @@ export function useTerminalSend(demo: boolean, notify: (message: string) => void
       .catch(() => setEnabled(false));
   }, []);
   useEffect(reload, [reload]);
+  // A change from another window (or a first answer from a card) shows here too.
+  useEffect(() => followDesktopSettings(api, window, reload), [reload]);
   const toggle = async () => {
     try {
       setEnabled(await api.terminalSend!(!enabled));
@@ -23,11 +73,19 @@ export function useTerminalSend(demo: boolean, notify: (message: string) => void
     }
   };
   const on = enabled && !demo;
-  const sendReply =
+  const sendReply: ReplySender | undefined =
     on && api.send
-      ? async (id: string, text: string) => {
+      ? async (id, text, replaceDraft, allowPartialDraft, images, exactDraft) => {
           try {
-            notify(await api.send!(id, text));
+            return await sendFollowUp(
+              id,
+              text,
+              replaceDraft,
+              notify,
+              allowPartialDraft,
+              images,
+              exactDraft,
+            );
           } catch (e) {
             // Also shown in the reply box; the toast survives if the box is gone.
             notify((e as Error).message);

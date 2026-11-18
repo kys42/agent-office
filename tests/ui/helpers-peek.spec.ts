@@ -103,7 +103,7 @@ test('Four or more helpers share one stacked desk whose list opens each of them'
   await expect(list.locator('.helper-stack-open')).toHaveCount(5);
   await list.locator('.helper-stack-open', { hasText: '조사 4' }).click();
   await expect(list).toHaveCount(0);
-  await expect(page.locator('.inspector-heading h2')).toHaveText(/보조 조사 4/);
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', /보조 조사 4/);
   await expect(stack.locator('.helper-stack-desk')).toHaveClass(/chosen/);
   // Escape closes only the list: the chosen helper stays open in the inspector.
   await stack.locator('.helper-stack-desk').click();
@@ -111,7 +111,7 @@ test('Four or more helpers share one stacked desk whose list opens each of them'
   await expect(list.locator('[aria-current]')).toContainText('조사 4');
   await page.keyboard.press('Escape');
   await expect(list).toHaveCount(0);
-  await expect(page.locator('.inspector-heading h2')).toHaveText(/보조 조사 4/);
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', /보조 조사 4/);
   await page.locator('.office-card').screenshot({ path: '.local/helper-stack-office.png' });
 });
 
@@ -143,6 +143,70 @@ test('Three helpers keep their own desks', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.helper-desk')).toHaveCount(3);
   await expect(page.locator('.helper-stack')).toHaveCount(0);
+});
+
+/**
+ * demo:0 leads an agent team: two teammates another session started sit at its desk as
+ * helpers, by their member names; one whose lead is not in the office keeps its own desk,
+ * tagged a teammate. Titles never show the `<teammate-message>` envelope.
+ */
+function teamFixture(): Snapshot {
+  const snapshot = fixture(0);
+  const host = snapshot.sessions.find((s) => s.id === 'demo:0')!;
+  const member = (id: string, title: string, lead: string | null, seat?: number) => ({
+    ...host,
+    id: `demo:${id}`,
+    nativeId: `demo-${id}`,
+    alias: '',
+    title,
+    status: 'work' as const,
+    updatedAt: Date.now() - 2000,
+    officeSeat: seat,
+    parentId: lead,
+    relation: {
+      kind: lead ? ('subagent' as const) : ('root' as const),
+      parentNativeId: lead,
+      source: 'Claude agent team',
+      team: 'session-demo0000',
+    },
+  });
+  snapshot.sessions.push(
+    member('mate-0', 'office-perf-scout', host.nativeId),
+    member('mate-1', 'doc-keeper', host.nativeId),
+    member('orphan', 'lonely-scout', null, 9),
+  );
+  return snapshot;
+}
+
+test('Teammates another session started sit at its desk; one without its lead is tagged', async ({
+  page,
+}) => {
+  await bridge(page, teamFixture());
+  await page.goto('/');
+  const desks = page.locator('.helper-desk[data-parent-id="demo:0"]');
+  await expect(desks).toHaveCount(2);
+  await expect(desks.locator('b')).toHaveText(['office-perf-scout', 'doc-keeper']);
+  await expect(desks.first()).toHaveAttribute('title', 'office-perf-scout · 팀메이트');
+  // Neither linked teammate has a desk of its own; the orphan does, with the tag.
+  await expect(page.locator('.desk-name', { hasText: 'office-perf-scout' })).toHaveCount(0);
+  const orphan = page.locator('.desk-name', { hasText: 'lonely-scout' });
+  await expect(orphan.locator('.desk-teammate')).toHaveText('팀메이트');
+  await expect(page.locator('.desk-name .desk-teammate')).toHaveCount(1);
+  await expect(page.getByText('<teammate-message')).toHaveCount(0);
+  await page.locator('.office-card').screenshot({ path: '.local/teammates-office.png' });
+  await desks.first().click();
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', /office-perf-scout/);
+});
+
+test('The row seats teammates as helpers of their lead too', async ({ page }) => {
+  const snapshot = teamFixture();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini=row');
+  await page.reload();
+  const desks = page.locator('.desk-row .helper-desk[data-parent-id="demo:0"]');
+  await expect(desks).toHaveCount(2);
+  await expect(page.locator('.desk-row .desk-name .desk-teammate')).toHaveCount(1);
+  await page.locator('.desk-row').screenshot({ path: '.local/teammates-row.png' });
 });
 
 test('The row and floor stack helpers too, and the list opens the helper in the office', async ({
@@ -190,7 +254,7 @@ test('One helper can be hidden on its own, by mouse or keyboard, and brought bac
   await expect(page.locator('.helper-desk[data-session-id="demo:helper-0"]')).toHaveCount(0);
   await expect(desks).toHaveCount(2);
   await expect(page.locator('.desk-station[data-station-id="demo:0"]')).toBeVisible();
-  await expect(page.locator('.inspector-heading')).toHaveCount(0);
+  await expect(page.locator('.card-head')).toHaveCount(0);
   // From the keyboard too.
   await page.getByRole('button', { name: '조사 2 · 보조 조사 2 가리기' }).focus();
   await page.keyboard.press('Enter');
@@ -217,7 +281,7 @@ test('The ×N list hides each helper from its own row', async ({ page }) => {
   await expect(stack.locator('.helper-stack-count')).toHaveText('×4');
   await expect(list.locator('.helper-stack-open')).toHaveCount(4);
   await expect(list).not.toContainText('보조 조사 1');
-  await expect(page.locator('.inspector-heading')).toHaveCount(0);
+  await expect(page.locator('.card-head')).toHaveCount(0);
 });
 
 test('The row and floor hide a helper on its own and bring it back from the chip', async ({
@@ -327,6 +391,7 @@ test('Closing a bubble does not bring it straight back; it peeks again once the 
   const bubble = desk.locator('.speech-bubble');
   await expect(bubble).toContainText('어제 맡긴 정리');
   await expect(bubble).not.toHaveClass(/is-peek/);
+  await bubble.hover();
   await bubble.locator('.bubble-dismiss').click();
   // The cursor is still on the desk: the closed bubble stays closed.
   await expect(bubble).toHaveCount(0);
@@ -429,6 +494,100 @@ test('Pointing at a desk shows what the person asked as its own bubble above', a
   await expect(request).toHaveCount(0);
 });
 
+test('An unfolded bubble folds back on a click elsewhere or when the window loses focus', async ({
+  page,
+}) => {
+  await bridge(page, answered());
+  await page.goto('/');
+  const bubble = page.locator('.desk-station[data-station-id="demo:0"] .speech-bubble');
+  const unfold = () => bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  await unfold();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  // Clicking inside it keeps it.
+  await bubble.locator('.speech-copy').click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  // A click on the room elsewhere folds it.
+  const room = (await page.locator('.office-card').boundingBox())!;
+  await page.mouse.click(room.x + 8, room.y + room.height - 8);
+  await expect(bubble).not.toHaveClass(/is-expanded/);
+  // So does turning to another app.
+  await unfold();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(bubble).not.toHaveClass(/is-expanded/);
+});
+
+test('Writing a reply keeps the unfolded bubble open', async ({ page }) => {
+  await bridge(page, answered());
+  await page.addInitScript(() => {
+    const office = (window as any).office;
+    office.terminalSend = async () => true;
+    office.send = async () => 'sent';
+    office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          { kind: 'tmux', label: 'tmux', status: 'idle', canSend: true, canFocus: true },
+        ]),
+      );
+  });
+  await page.goto('/#mini=row');
+  const desk = page.locator('.desk-row [data-station-id="demo:0"]');
+  const bubble = desk.locator('.speech-bubble');
+  await desk.locator('.office-pet').hover();
+  await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  await bubble.locator('.bubble-reply').click();
+  const form = desk.locator('.quick-reply');
+  await form.locator('textarea').click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  await expect(form).toBeVisible();
+  // Another desk's unfolded bubble folds when the person goes back to this reply box.
+  const other = page.locator('.desk-row [data-station-id="demo:1"]');
+  const otherBubble = other.locator('.speech-bubble');
+  await other.locator('.office-pet').hover();
+  await otherBubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  await expect(otherBubble).toHaveClass(/is-expanded/);
+  await form.locator('textarea').click();
+  await expect(otherBubble).not.toHaveClass(/is-expanded/);
+});
+
+test('In the row, clicking another bubble while one is unfolded opens that one at once', async ({
+  page,
+}) => {
+  await bridge(page, answered());
+  await page.goto('/#mini=row');
+  const a = page.locator('.desk-row [data-station-id="demo:0"] .speech-bubble');
+  const b = page.locator('.desk-row [data-station-id="demo:1"] .speech-bubble');
+  await page.locator('.desk-row [data-station-id="demo:0"] .office-pet').hover();
+  await a.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  await expect(a).toHaveClass(/is-expanded/);
+  // The press folds the first one; the click must still reach the second (its text).
+  await page.locator('.desk-row [data-station-id="demo:1"] .office-pet').hover();
+  await b.locator('.speech-open').click();
+  await expect(b).toHaveClass(/is-expanded/);
+  await expect(a).not.toHaveClass(/is-expanded/);
+});
+
+test('The pet folds its unfolded bubble on a click outside or another app', async ({ page }) => {
+  const snapshot = answered();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini');
+  await page.reload();
+  const bubble = page.locator('.dock-pet-speech .speech-bubble');
+  const unfold = async () => {
+    await page.locator('.dock-pet-anchor').hover();
+    await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+    await expect(bubble).toHaveClass(/is-expanded/);
+  };
+  await unfold();
+  await page.mouse.click(10, 10);
+  await expect(bubble).not.toHaveClass(/is-expanded/);
+  await unfold();
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(bubble).not.toHaveClass(/is-expanded/);
+});
+
 test('The pet shows the request bubble only while hovered, inside its window', async ({ page }) => {
   const snapshot = answered();
   await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
@@ -458,7 +617,8 @@ test('The pet shows the request bubble only while hovered, inside its window', a
   expect(box.x + box.width).toBeLessThanOrEqual(stage.x + stage.width);
   expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height);
   // Moving slowly down from the bubble onto the column keeps the hover (a bridge spans the gap).
-  const first = tools.getByRole('button').first();
+  // (Onto hide, the last: resting on 보기 at the top would open its menu.)
+  const first = tools.getByRole('button').last();
   const answer = (await speech.locator('.speech-bubble').boundingBox())!;
   const target = (await first.boundingBox())!;
   const x = target.x + target.width / 2;
@@ -530,4 +690,23 @@ test('The row shows the request bubble above when its desk is pointed at; screen
     else await expect(request).toContainText('로그인 화면 여백을 다듬어 줘');
     await page.mouse.move(5, 5);
   }
+});
+
+test('An unfolded bubble in the dock offers the pop-up card', async ({ page }) => {
+  const snapshot = answered();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini=row');
+  await page.reload();
+  const desk = page.locator('.desk-row [data-station-id="demo:0"]');
+  const bubble = desk.locator('.speech-bubble');
+  await desk.locator('.office-pet').hover();
+  await expect(bubble.locator('.bubble-popup')).toHaveCount(0);
+  await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  const popup = bubble.getByRole('button', { name: /업무 카드 열기/ });
+  await expect(popup).toBeVisible();
+  await expect(popup).toHaveAttribute('title', '팝업으로 보기');
+  await page.locator('.desk-row').screenshot({ path: '.local/bubble-popup-row.png' });
+  // In the browser preview the card opens in the office (the desktop opens the pop-up window).
+  await popup.click();
+  await expect(page).toHaveURL(/#session=demo%3A0$/);
 });

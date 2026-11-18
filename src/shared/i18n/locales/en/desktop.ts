@@ -5,6 +5,7 @@ export const desktop = {
     pet: 'Desk pet',
     row: 'Unfold desk row',
     floor: 'Unfold floor desks',
+    settings: 'Settings…',
     quit: 'Quit',
   },
   /** Right-click menu in every window. */
@@ -16,9 +17,23 @@ export const desktop = {
     paste: 'Paste',
     selectAll: 'Select All',
   },
+  /** OS notifications (#229). With hidden screen content, the title is the tool's name only. */
+  notify: {
+    final: 'Sent a final reply',
+    call: 'Needs your attention',
+    error: 'Ran into an error',
+    summaryTitle: 'Agent Office',
+    summary: (n: number, finals: number) =>
+      finals === n
+        ? `${n} new final replies`
+        : finals
+          ? `${n} new updates · ${finals} final ${finals === 1 ? 'reply' : 'replies'}`
+          : `${n} updates need your attention`,
+  },
   untrustedWindow: 'This window is not allowed.',
   unsupportedLink: 'Unsupported result link.',
   webLinksOnly: 'Only web links (http or https) can be opened.',
+  fileMissing: "Couldn't find this file",
   badRequest: 'Invalid request',
   badFile: 'Invalid file request',
   codexOpened: 'Asked Codex to open the session',
@@ -31,30 +46,140 @@ export const desktop = {
       cancel: 'Cancel',
       message: 'Turn on Send to terminal?',
       detail:
-        "What you write on the work card is typed straight into the terminal of an idle Claude Code session in Orca or tmux, and handed to the Codex queue for a running Codex CLI session. It's the same as typing it yourself, so a session started without permission prompts runs it as is.",
+        "What you write on the work card is typed straight into the terminal of an idle Claude Code session in Orca or tmux, handed to the Codex queue for a running Codex CLI session, or sent to an open conversation in Codex Desktop. It's the same as typing it yourself, so a session started without permission prompts runs it as is.",
     },
     enableFirst: 'Turn on ‘Send to terminal’ in Settings.',
+    codexDesktopSent: 'Sent to the conversation in Codex Desktop',
+    codexDesktopUnavailable:
+      'No compatible Codex Desktop owner is available. Open this conversation in Codex Desktop and try again. Nothing was sent.',
+    codexDesktopUnconfirmed:
+      'Could not confirm delivery to Codex Desktop. Check the conversation before sending again; the app may have received it or rejected it while busy.',
     codexMissing: "Couldn't find the Codex CLI, so nothing was sent.",
     codexUnconfirmed:
       "Couldn't confirm it reached Codex. Check the Codex screen before sending again.",
     noTarget: "Couldn't find an Orca or tmux terminal, or a Codex session, to send to right now.",
+    background: (command: string) =>
+      `This Claude session runs in the background, and no terminal could be confirmed to show it. Open it with ${command} in a terminal, then send.`,
+    parked: (job: string) =>
+      `This conversation was moved to the background${job ? ` as ‘${job}’` : ''}. Typing in its terminal goes there, so send from that session's card.`,
     unconfirmed: (host: string) =>
       `Couldn't confirm it was sent to ${host}. Check the terminal before sending again.`,
     orcaNoSwitch: "Orca couldn't switch to that terminal.",
+    orcaSlow:
+      "Orca didn't answer in time. Bring Orca to the front (its tab may not be shown yet) and try again.",
+    orcaRefusedSwitch: (reason: string) => `Orca couldn't switch to that terminal: ${reason}`,
     orcaFocused: 'Switched to the terminal in Orca',
-    tmuxFocused: (label: string) => `Selected tmux pane ${label}`,
+    /** A running conversation's app brought forward; its window is not known (#376). */
+    appRaised: (app: string) => `Brought ${app} forward. Find this conversation's window there.`,
+    appTabFocused: (app: string) => `Switched to its tab in ${app}`,
+    /** After going to a window that moved the conversation to the background. */
+    parkedHint: "It is in Claude's agents view there: press Enter to open it again.",
+    /** A running conversation whose place cannot be brought forward from here. */
+    noWay:
+      "This conversation is running somewhere this app can't bring forward. Find its window yourself, or fork it to continue in a new session.",
+    tmuxFocused: (label: string, app: string) => `Switched to tmux pane ${label} in ${app}`,
+    /** No client was attached, so a new Terminal window was opened attached to the session. */
+    tmuxAttached: (label: string) => `Opened Terminal attached to tmux ${label}`,
+    /** The client was switched, but the app showing it could not be found or raised. */
+    tmuxNotRaised: (label: string) =>
+      `Switched tmux to pane ${label}, but couldn't bring its terminal window to the front.`,
+    /** The app was raised, but the window or tab showing the client could not be selected. */
+    tmuxAppOnly: (label: string, app: string) =>
+      `Switched tmux to pane ${label} and brought ${app} forward, but couldn't select the window or tab showing it.`,
+    tmuxAttachHint: (label: string, command: string) =>
+      `No terminal is attached to tmux ${label}. Attach with: ${command}`,
+    tmuxOpenFailed: (label: string) =>
+      `Selected tmux pane ${label}, but couldn't open Terminal to attach to it.`,
     empty: 'Type something to send.',
     tooLong: (max: string) => `Keep it to ${max} characters or fewer.`,
     notOwner: "Claude isn't at the terminal right now (paused, for example). Check the terminal.",
-    busy: "It's working right now. Send again once it's done.",
+    /** A permission prompt, plan approval, menu or `!` shell mode on screen would take the text. */
+    notReady:
+      "It isn't taking input right now (a question, permission prompt, plan approval, menu or shell mode may be open). For questions, answer on the card above or use 'Answer by chatting instead'; otherwise check the terminal.",
+    draft: 'There is already text in the prompt. Check the terminal before sending.',
+    /** Copying the composer's text to the clipboard failed, so it was left alone. */
+    backupFailed:
+      "Couldn't copy the text in the prompt to the clipboard, so nothing was cleared or sent.",
+    /** `agent` is the agent's name, e.g. Claude. The earlier text is already on the clipboard. */
+    clearFailed: (agent: string) =>
+      `Couldn't empty the ${agent} prompt, so nothing was sent. Check the terminal.`,
+    /** The text never moved: the keys may not have arrived, or it is the agent's own suggestion. */
+    clearFailedSuggestion: (agent: string) =>
+      `Couldn't empty the ${agent} prompt, so nothing was sent. If it's ${agent}'s suggestion, it can't be cleared from here: type over it in the terminal.`,
+    /** After clearing, the prompt did not show exactly the typed text: no Enter, the text stays. */
+    notVerified:
+      "Typed it into the emptied prompt, but couldn't confirm it holds only your text, so it wasn't submitted. Check the terminal.",
+    /** Not all of the composer's text is on screen (a box too short for it): nothing is cleared. */
+    notWhole:
+      "Not all of the text in the prompt is visible, so it can't be cleared from here. Clear it in the terminal, then send again.",
+    /** The draft was copied and cleared; copying what showed up after it failed. */
+    backupFailedLater:
+      'The draft was cleared and is on your clipboard, but copying the text that showed up after it failed, so nothing more was cleared or sent. Check the terminal.',
+    /** Claude paused, left, or stopped taking input while the prompt was being cleared. */
+    clearStopped:
+      "Claude's state changed while the prompt was being cleared, so clearing stopped and nothing was sent. Check the terminal.",
+    /** Added to any failure once the composer's text was copied (it may be partly cleared). */
+    partialClipboardKept:
+      'Readable content is on the clipboard. Hidden content may not be recoverable.',
+    clipboardKept: 'The text that was in the prompt is on your clipboard.',
+    /** A send reached an agent whose input box can't be read (OpenClaw, anything new). */
+    unsupportedAgent: (agent: string) => `Sending to ${agent} from here isn't supported.`,
+    shellPrefix: "Text starting with ‘!’ would run as a shell command, so it isn't sent.",
+    unreadable: (host: string) => `Couldn't read the ${host} screen, so nothing was sent.`,
     /** `reason` is Orca's own refusal, already wrapped as ` (reason)`, or empty. */
     orcaRefused: (reason: string) => `Orca didn't accept the input${reason}.`,
-    orcaStarted: 'Sent to the Orca terminal, and work has started',
     orcaSent: 'Sent to the Orca terminal',
     stateChanged:
-      "Typed it into the prompt, but the state changed in the meantime, so it wasn't submitted. Check the terminal.",
+      "Typed it into the prompt, but the state changed in the meantime, so it wasn't submitted. Check the terminal before sending again.",
+    notSubmitted: (host: string) =>
+      `Typed it into ${host}, but couldn't press Enter. Check the terminal before sending again.`,
+    sentThenPrompt: (host: string) =>
+      `Sent to ${host}, and a permission prompt opened right after. Check the terminal.`,
     tmuxSent: (label: string) => `Sent to tmux ${label}`,
+    /** Sent mid-turn: Claude queues it and picks it up as it goes. */
+    queued: (target: string) =>
+      `Sent to ${target} · it's working, so it's queued for the current turn`,
     codexNoReply: "Couldn't confirm Codex's response. Check the Codex screen before sending again.",
     codexQueued: 'Passed to the Codex session',
+    /** Images were pasted as paths, but the prompt did not show them as attached images. */
+    imagesNotShown:
+      "Pasted the images into the prompt, but couldn't confirm they were attached, so nothing was submitted. Check the terminal.",
+    /** This destination takes no images (a remote office, OpenClaw). */
+    imagesUnsupported: "Images can't be sent to this conversation from here.",
+    /** [Send as is]: the box no longer held exactly the previewed text, so Enter wasn't pressed. */
+    draftMoved: "The text in the input box changed, so it wasn't sent. Here's what it holds now.",
+    /** [Send as is]: not all of the box's text is on screen. */
+    draftNotWhole:
+      "Not all of the text in the input box is visible, so it wasn't sent from here. Check the terminal.",
+    /** [Send as is]: the agent paused, left, or stopped taking input before Enter. */
+    draftStopped: "The agent's state changed, so nothing was sent. Check the terminal.",
+    /** [Send as is]: pressing Enter failed; the text is still in the box. */
+    draftNotSubmitted: (host: string) =>
+      `Couldn't press Enter in ${host}. The text is still in the input box.`,
+    /** [Send as is]: Enter went in, yet the box still holds the same text. */
+    draftNotTaken: (host: string) =>
+      `Pressed Enter in ${host}, but the input box still shows the same text. Check the terminal.`,
+    /** [Send as is] on text the screen can't tell from Claude's suggestion, and Enter didn't take it. */
+    draftNotTakenSuggestion: (host: string) =>
+      `Pressed Enter in ${host}, but the input box still shows the same text. If it's Claude's suggestion, Enter doesn't send it: press Tab in the terminal to take it, then send.`,
+    /** [Send suggestion] on text that can't go that way (more than one line, no such adapter). */
+    suggestionUnsupported:
+      "This text can't be sent as a suggestion (one line only). Check the terminal.",
+    /** [Send suggestion]: the suggestion is cut short on screen. */
+    suggestionNotWhole:
+      "Not all of the suggestion is visible, so it wasn't sent from here. Press Tab in the terminal to take it.",
+    /** [Send suggestion]: pressing Tab or Enter failed. */
+    suggestionNotSubmitted: (host: string) =>
+      `Couldn't send the suggestion in ${host}. Check the terminal.`,
+    /** [Send suggestion]: the accept key went in, but the box didn't then hold exactly it: no Enter. */
+    suggestionHeld: (host: string) =>
+      `Pressed the key that takes the suggestion in ${host}, but the input box didn't match before Enter, so nothing was sent. Check the terminal.`,
+  },
+  /** Images attached in the composer, saved in the app's own folder. */
+  attachments: {
+    notImage: 'Only PNG, JPEG, GIF or WebP images can be attached.',
+    tooLarge: (bytes: number) => `Images must be ${Math.round(bytes / 1024 / 1024)} MB or smaller.`,
+    tooMany: (max: number) => `Attach up to ${max} images at a time.`,
+    missing: 'An attached image is no longer available. Remove it and attach it again.',
   },
 };

@@ -35,9 +35,8 @@
 }
 /* Unfolded text scrolls inside the bubble, within the headroom of a first-row desk
    (the office map clips above its wall: bubble bottom sits 164px below the map top). */
-.speech-bubble.is-expanded .speech-copy b {
+.speech-bubble.is-expanded .speech-text {
   display: block;
-  -webkit-line-clamp: unset;
   max-height: 92px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -45,9 +44,9 @@
 .desk-station:has(.speech-bubble.is-expanded) {
   z-index: 7;
 }
-/* The desk row's headroom ends at the tools band: bubble bottom 206px from the window top
-   (44 band + 104 ROW_TOP + 58), header and padding ≈ 46px → text up to 112px. */
-.desk-row .speech-bubble.is-expanded .speech-copy b {
+/* The desk row's headroom ends at the window top: bubble bottom 206px below it
+   (44 ROW_TOP_ROOM + 104 ROW_TOP + 58), header and padding ≈ 46px → text up to 112px. */
+.desk-row .speech-bubble.is-expanded .speech-text {
   max-height: 112px;
 }
 .speech-detail {
@@ -57,7 +56,7 @@
   margin-top: 5px;
   padding-top: 5px;
   border-top: 1px dashed rgba(42, 33, 40, 0.25);
-  font-size: 10px;
+  font-size: calc(10px * var(--bubble-scale));
   line-height: 1.35;
   color: #5b4d55;
 }
@@ -74,9 +73,76 @@
   display: flex;
 }
 
-/* Original message style inside bubbles: inline only, small and quiet. */
-.speech-copy .md-p {
-  display: inline;
+/* Message structure survives in both previews and unfolded bubbles. A height limit on
+   the body also contains block content (line-clamp does not reliably contain tables). */
+.speech-text > * + * {
+  margin-top: 4px;
+}
+.speech-text :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 1em;
+  font-weight: 800;
+  line-height: inherit;
+}
+.speech-text :is(ul, ol) {
+  padding-left: 16px;
+}
+.speech-text ul {
+  list-style: disc;
+}
+.speech-text ol {
+  list-style: decimal;
+}
+.speech-text li + li,
+.speech-text li > :is(p, ul, ol) + * {
+  margin-top: 2px;
+}
+.speech-text ul ul {
+  list-style: circle;
+}
+.speech-text .contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+.speech-text .task-list-item > input {
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  accent-color: var(--b-ink);
+}
+.speech-text blockquote {
+  padding-left: 6px;
+  border-left: 2px solid var(--b-line);
+}
+.speech-text hr {
+  border: 0;
+  border-top: 1px solid var(--b-line);
+}
+.bubble-table {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+.bubble-table:focus-visible {
+  outline: 1px solid var(--b-line);
+  outline-offset: -1px;
+}
+.bubble-table table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: inherit;
+}
+.bubble-table :is(th, td) {
+  min-width: 48px;
+  max-width: 160px;
+  padding: 3px 5px;
+  border: 1px solid color-mix(in srgb, var(--b-line) 30%, transparent);
+  vertical-align: top;
+}
+.bubble-table th {
+  font-weight: 800;
+  background: var(--b-chip);
+  color: var(--b-chip-ink);
 }
 .speech-copy strong {
   font-weight: 800;
@@ -94,8 +160,7 @@
   font-size: 0.92em;
   background: rgba(42, 33, 40, 0.08);
 }
-/* Unfolded (or hovered on the pet), a bubble grows sideways with its text, then down;
-   paragraphs get their own lines. */
+/* Unfolded (or hovered on the pet), a bubble grows sideways with its text, then down. */
 .speech-bubble.is-expanded {
   width: max-content;
   min-width: 158px;
@@ -103,12 +168,6 @@
 }
 .desk-row {
   --bubble-wide: 260px;
-}
-.speech-bubble.is-expanded .md-p {
-  display: block;
-}
-.speech-bubble.is-expanded .md-p + .md-p {
-  margin-top: 4px;
 }
 
 /* ───────── Bubble tones: each kind of speech has its own shape ─────────
@@ -184,7 +243,7 @@
 .tone-thought .speech-open {
   padding-inline: 11px;
 }
-.tone-thought .speech-copy b {
+.tone-thought .speech-text {
   font-style: italic;
   font-weight: 500;
 }
@@ -234,7 +293,20 @@
   height: 3px;
   border-radius: 50%;
   background: currentColor;
-  animation: bubble-typing 1.25s ease-in-out infinite;
+  opacity: 0.55;
+}
+/*
+ * Only the bubble being looked at types (the chosen desk's, an unfolded or pointed-at one); the
+ * rest show still dots, so a busy office is not a dozen loops for the same hint.
+ */
+:is(.selected-station .speech-bubble, .speech-bubble:is(.is-expanded, :hover, :focus-within))
+  .bubble-typing
+  i {
+  /* Longhands, so the staggered delays below still apply. */
+  animation-name: bubble-typing;
+  animation-duration: 1.25s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 .bubble-typing i:nth-child(2) {
   animation-delay: 0.125s;
@@ -289,6 +361,31 @@
   pointer-events: none;
   animation: glow-pulse 1.625s ease-in-out 0.375s infinite;
 }
+.speech-bubble:is(.bubble-opened, .is-expanded, .is-peek) .bubble-halo {
+  animation: none;
+  opacity: 0;
+}
+
+/* Row / floor tools stay quiet until pointed at or reached with the keyboard.
+   Hidden tools must not steal clicks from the transparent desktop around a bubble. */
+.desk-row .bubble-reply {
+  opacity: 0;
+  pointer-events: none;
+  color: var(--b-ink);
+  background: var(--b-bg);
+  box-shadow: 0 0 0 1px var(--b-line);
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
+}
+.desk-row .speech-bubble:is(:hover, :focus-within) .bubble-reply,
+.desk-row .bubble-reply.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.desk-row .bubble-reply:is(:hover, :focus-visible, .open) {
+  background: var(--b-bg);
+}
 
 /* Error — a warning label: amber stripes along the top. */
 .speech-bubble.tone-error {
@@ -312,14 +409,20 @@
 
 .reduce-motion .bubble-typing i,
 .motion-paused .bubble-typing i,
+.reduce-motion .speech-bubble::before,
+.motion-paused .speech-bubble::before,
+.reduce-motion .bubble-halo,
+.motion-paused .bubble-halo,
 .reduce-motion .speech-bubble.tone-attention,
 .motion-paused .speech-bubble.tone-attention {
-  animation: none;
+  animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
   .bubble-typing i,
+  .speech-bubble::before,
+  .bubble-halo,
   .speech-bubble.tone-attention {
-    animation: none;
+    animation: none !important;
   }
 }
 
@@ -350,13 +453,13 @@
 .speech-open {
   cursor: pointer;
 }
-.speech-copy b {
+.speech-text {
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
 }
-.speech-copy b::selection,
-.speech-copy b *::selection {
+.speech-text::selection,
+.speech-text *::selection {
   background: rgba(244, 184, 108, 0.55);
 }
 .speech-copy .web-link {
@@ -397,6 +500,22 @@
   color: var(--accent-2);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+/* A file on this computer: a document icon before its label; the path shows on hover. */
+.file-link svg {
+  display: inline-block;
+  margin-right: 2px;
+  vertical-align: -1px;
+}
+.file-link.is-missing {
+  opacity: 0.6;
+  text-decoration-style: dashed;
+}
+/* In a browser the file can't open: its path stays beside the label, as written. */
+.file-link.is-text code {
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+  opacity: 0.75;
 }
 
 /* While pointed at: the person's own request as its own bubble right above (what was asked).
@@ -459,24 +578,24 @@
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
-  /* Whole lines only (11px × 1.4): office 3, row 4, pet 2. */
-  max-height: 46px;
+  /* Whole lines only, at any reading size: office 3, row 4, pet 2. */
+  max-height: calc(3 * 1lh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  font-size: 11px;
+  font-size: calc(11px * var(--bubble-scale));
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 /* The row has more headroom: its bubbles share it (answer 3 lines, request up to ~4.5). */
 .desk-row .speech-request-text {
-  max-height: 62px;
+  max-height: calc(4 * 1lh);
 }
 .speech-request-bubble.has-more .speech-request-text {
   mask-image: linear-gradient(#000 65%, transparent);
 }
-.desk-row .speech-bubble:has(> .speech-request-bubble) .speech-copy b {
-  -webkit-line-clamp: 3;
+.desk-row .speech-bubble:has(> .speech-request-bubble) .speech-text {
+  --speech-lines: 3;
 }
 /* Unfolded, the answer takes the headroom: the request bubble steps aside until folded. */
 .speech-bubble.is-expanded > .speech-request-bubble {

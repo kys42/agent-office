@@ -1,3 +1,296 @@
+# 화면 테스트를 다른 포트로 돌리기 (Issue #54)
+
+`npm run test:ui`는 이 작업 폴더의 `npm run dev`를 새로 띄운다(`reuseExistingServer: false`). 기본 포트는 UI 5173·수집기 4318이다. 다른 작업 폴더가 이 포트를 쓰고 있으면 Playwright가 "already used"로 멈추므로, 두 포트를 환경변수로 옮겨서 돌린다.
+
+```bash
+AGENT_OFFICE_UI_PORT=5212 AGENT_OFFICE_API_PORT=4412 npm run test:ui
+AGENT_OFFICE_UI_PORT=5212 AGENT_OFFICE_API_PORT=4412 npx playwright test tests/ui/office.spec.ts
+```
+
+- 같은 값이 `playwright.config.ts`(baseURL·storageState origin·webServer url/env), `vite.config.ts`(dev 포트·`/api` 프록시·dev 페이지 CSP의 HMR 소켓), `server/dev.ts`(수집기 포트·허용 Host/Origin)에 함께 적용된다(`server/dev-ports.ts`). `npm run dev`만 다른 포트로 띄울 때도 같은 변수를 쓴다.
+- 포트가 숫자가 아니거나 두 값이 같으면 기본값으로 넘어가지 않고 바로 오류를 낸다. 실수로 다른 작업의 5173·4318을 쓰지 않게 하려는 것이다.
+- 테스트 수집기는 `.local/ui-tests/` 아래 임시 폴더(`AGENT_OFFICE_DATA_DIR`·`CLAUDE_CONFIG_DIR`·`CODEX_HOME`·`OPENCLAW_STATE_DIR`)만 읽는다. 실제 사용자 기록은 열지 않는다.
+- 2026-11-09 확인: UI 5212·수집기 4412(ko-KR)로 `office.spec.ts`·`onboarding.spec.ts` 28개 통과(격리 수집기 테스트 포함). 실행 중 5173·4318에는 아무것도 띄우지 않았다. dev 페이지 CSP가 `ws://127.0.0.1:5212`로 바뀌고, `/api` 프록시·수집기 직접 호출 200, 옛 Origin(5173)은 403.
+
+---
+
+# 실행 시트 · 2026-11-02 (Issue #319)
+
+- `refactor/launch-core`(#322) 위 `feat/launch-sheet`에서 구현했다. 예전 `TmuxResume`·`SummonExisting`과 IPC 래퍼(`office:tmux-resume`·`tmux-summon`·`orca-launch`·`orca-summon`)를 지우고 `office:launch`에 `open`을 더했다.
+- 단위 891개 통과: 새 `tests/launch-sheet.test.ts` 6개(의도 만들기·복제 이름·대화 목록·중복 판단·행선지 행·결과 화면) 포함. `launch-core.test.ts`의 요청 모양 검사에 `open`을 반영했다.
+- UI: `tests/ui/launch-sheet.spec.ts`가 `tmux-resume.spec.ts`·`summon-existing.spec.ts`를 대신한다. 세 의도, 행선지 가능 여부·이유, 지난번 선택 기본값, 복제 기본값(원래 대화가 있는 곳), 결과 상태(열림·확인 못 함 Orca/tmux·거절+이동·거절+다른 곳 제안·이미 실행 중·복사·취소), 카드 진입의 대화 선택, +의 대기·보관 동료와 사무실로 데려오기(실패 시 다시 데려오기), 화면 숨기기, 키보드, 오래된 폴더, 독 공간, 380×480 카드, 밝음/어두움 캡처를 본다. 화면 테스트는 다른 세션과 겹치지 않게 별도 vite 포트(5196, ko-KR)로 전체 437개를 돌려 436개 통과했고, 수집기가 필요한 `office.spec.ts`의 격리 수집기 1개는 기본 설정(5173·4318, `.local/ui-tests` 격리 폴더)으로 따로 통과했다.
+- 데스크톱 smoke는 조용한 모드(`scripts/quiet-smoke.mjs`)로만 돌렸고, 지운 preload API가 없는지와 원격 세션·`copy`의 `open` 거절을 확인한다. 실제 Orca·tmux·Terminal·에이전트 실행, 사용자 tmux 서버, 사용자 DB·대화 기록은 건드리지 않았다.
+- 수동 확인(실제 기기에서 남은 것): Orca 실행 중/꺼짐에서 행 이유, tmux 시작 직후 Terminal 열기, 확인 창 취소 뒤 양식 복귀, 대기 동료 이어가기 후 사무실 복귀, 실행 중인 대화의 [그곳으로 이동].
+
+# 2026-10-29 · 실제 설치 및 OpenClaw SQLite 경계 검수
+
+- 사용자의 로컬 적용 요청에 따라 `e5cb58f`의 Developer ID/앱·DMG 공증, Gatekeeper, DMG 설치본 합성 3공급자 검사를 통과하고 Applications에 설치했다. 기존 앱·Office 데이터는 외장 볼륨에 백업하고 백업 DB 무결성을 확인했다. 개인 설정 22행은 이전과 동일했고 신규 수집에 따라 좌석 설정만 갱신됐다.
+- 실제 사무실과 오른쪽 대화 카드, 현재 세션 진행 설명·작업 브랜치 갱신, 이전 대화 불러오기를 확인했다. 기존 설치본의 Helper/Renderer CPU 합계 약 200% 상태는 교체 뒤 재현되지 않았다. 새 앱 첫 관찰의 프로세스 CPU 합계는 28–35%, RSS 합계 약 546–673MiB였다. 다른 Electron 버전·실행 시간·압축/스왑 조건이며, 이 차이 전체를 이번 최적화 단독 효과로 해석하지 않는다.
+- 추가로 실제 OpenClaw DB에서 JSON `null` 이벤트 때문에 178개 세션이 중단되는 경계를 재현했다(원문·제목은 fixture로 복제하지 않음). 객체가 아닌 이벤트 행만 건너뛰고 `partial`로 표시하도록 JSONL 경계와 맞췄다. 관련 회귀 38개·build·format 통과 및 독립 재리뷰에서 차단 이슈 없음을 확인했다. 수정 어댑터로 실제 DB를 읽기 전용 재조회해 errors 178→0, 정상 반환 28→120(설정된 조회 상한)을 확인했다. 손상 행·head/tail 범위 때문에 부분 기록인 항목은 partial을 유지한다. 최종 수정본의 공증/설치/CI 결과는 PR #297에 연결한다.
+
+- `f177aba`의 Developer ID 앱·DMG를 재공증하고 Gatekeeper/DMG 설치 검사를 통과한 뒤 같은 Applications 경로에 교체했다. 설치본은 합성 3공급자·설정 IPC·renderer 격리를 통과했다. 실제 사무실에서도 OpenClaw 연결 표시가 정상으로 바뀌었다. 기존 사용자 DB를 정상 종료 후 다시 백업하고 무결성을 확인했다.
+- f177aba 원격 검증은 단위 820개·build/format/MCP·Windows 통과, Linux UI 436/437 통과였다. 나머지 1건은 자동 이전 페이지 로딩이 버튼을 제거한 뒤 테스트의 count-then-click이 기다리던 경합이었다. 사용자처럼 위로 스크롤하고 각 이전 구간의 도달을 기다리도록 테스트를 바꾸었다. 페이지 관련 8개를 두 번 반복해 16/16 통과했다. 최종 전체 CI 링크는 PR에서 확인한다.
+
+---
+
+# 2026-10-29 · 대량 기록 메모리·페이지 최적화 (#296)
+
+- 기준 `9a05a23`(PR #291) → `perf/bounded-working-set`. 정본 [경량화 설계](PERFORMANCE-DESIGN.md), [기계 판독 측정값](benchmarks/2026-10-29-working-set.json). 모든 부하는 합성 provider home/임시 DB이며 실제 사용자 데이터·설치 앱은 건드리지 않았다.
+- 같은 합성 세션 100개/소식 50,000개. 아래 CPU는 측정 시퀀스의 user+system 누적 시간으로, 앱 전체 CPU 점유율이 아니다. RSS는 두 번 GC 직후 표본이고 OS allocator/캐시 영향이 있으며 단독 보장값이 아니다.
+
+| 지표 | 변경 전 | 변경 후 |
+| --- | ---: | ---: |
+| snapshot 뒤 heap | 89.83 MiB | 21.85 MiB |
+| hot stage 뒤 heap | 201.80 MiB | 21.99 MiB |
+| snapshot 뒤 RSS | 975.59 MiB | 169.53 MiB |
+| 반복 snapshot 평균 | 566.20 ms | 52.00 ms |
+| 소식 50개 조회 | 592.89 ms | 24.88 ms |
+| 최신 대화 조회 | 349.73 ms | 0.86 ms |
+| hot stage | 364.25 ms | 0.46 ms |
+| 시퀀스 누적 CPU | 6,558.96 ms | 575.87 ms |
+| 전송 소식 / snapshot bytes | 1,047 / 1,934,285 | 동일 |
+| 미확인 / 전체 소식 수 | 26,667 / 50,000 | 동일 |
+
+- 소식 **200,000개**에서도 stage 뒤 heap **22.03 MiB**, RSS **170.77 MiB**, 최신 대화 **0.99 ms**, stage **0.79 ms**. 반복 snapshot **177.55 ms**, 소식 page **102.52 ms**로 정확한 SQL 집계의 CPU 비용은 역사량에 비례한다. 일정한 상주 heap과 일정한 쿼리 시간은 다른 주장이다.
+- 가속 연속 수집 **720회·세션 40개**: 준비 뒤 heap **76.5→79.2 MiB(+3.5%)**, window 예산 유지. 실제 한 시간 방치 검수와 구분한다. 이 검수는 cold tier 추가 전이며 40개 모두 hot cache에 들어간다.
+- 최종 압축 tier의 예산 초과 검수 **24회·세션 80개**: heap **78.6→79.3 MiB(+0.9%)**, hot 41개, cold 약 **0.6 MiB**. 단위 회귀는 hot 1개/파일 3개/5회 순회에도 원본 read가 3회로 유지됨, stamp 변경·손상·prune을 검증한다. single entry 8 MiB 초과 또는 두 tier 모두 꽉 찬 경우는 bounded source 재읽기 fallback이다.
+- 단위 **819개 통과**. migration/legacy writer/read-only, 같은 시각 포함 1,600개 excerpt cursor, 오래된 bookmark reach, 원본·읽음 보존, 정확한 count/read-all, stalled request 교체, patch 8 MiB 이후 전체 snapshot 복구, 디스크 checkpoint 실패 시 대기 보존, 150,000 usage iterator를 포함한다.
+- production build(typecheck 포함)·format·MCP smoke 통과. Electron smoke는 합성 3개 공급자, 카드/책상/설정, IPC persistence, renderer isolation을 통과했고 OS focus/Dock 검수는 quiet 모드에서 생략했다. 서명·공증한 새 릴리스 검수는 이 변경의 범위가 아니다.
+- UI 전체 435개 중 첫 run **433 pass / 2 fail**. 첫 failure는 추가한 1,000개 대화 검수에서 초기 detail을 기다리지 않은 fixture, 두 번째는 debounce→throttle 변경 뒤 이전 ‘반드시 한 번만’ 기대값이었다. fixture/기대값을 수정하고 집중 재검증했다. 기존 스크롤 fixture의 앵커 복구와 `scrollTo` 경합은 실제 휠 입력으로 검증하도록 보완했다. 최종 집중 UI **13개 모두 통과**. 전체 CI 결과는 PR 근거를 따른다.
+- 첫 Linux CI는 433/435 통과. 대량 대화 탐색에서 자동 로딩이 클릭보다 먼저 마지막 페이지에 도달하는 경합과, 480개 소식 상태의 브라우저 응답 지연을 확인했다. 최종 페이지 도달을 성공으로 처리하고, Markdown memo 및 기록 프로필의 정지 프레임으로 불필요한 렌더링/애니메이션을 줄였다. 로컬 관련 UI **27개 통과**(대화·소식·북마크·파일 링크 포함).
+- 첫 Windows CI는 빌드/패키지 및 Windows 고유 UI smoke를 통과했으나 공통 desktop smoke의 펫 전환 click 대기가 끝나지 않아 이 작업의 run을 취소했다. 새 펫 창 생성은 확인됐고, 숨겨진 원래 창의 mouse frame 완료 대신 버튼 handler→새 창 검증으로 수정했다. Windows CI에 중복 실행 취소·job 20분/실행 검수 5분 상한을 추가했다. 최종 원격 실행은 PR 체크를 따른다.
+- 두 번째 Linux CI 전체 **435개 통과**. Windows 두 번째 실행은 숨겨진 main 창의 기본 rAF 기반 `waitForFunction`에서 멈췄다. 숨겨진 창의 저장값을 Node에서 polling하고 펫→사무실 복귀도 창 가시성으로 검증하도록 보완했다. 제품의 background throttling은 바꾸지 않았다.
+- 소식의 이전 페이지 요청 도중 최신 복귀, 입력 없는 사무실에서 일시 실패 후 제한된 backoff 재조회 회귀를 추가했다. 소식 paging **8개 통과**, build·format 통과, 독립 재리뷰에서 차단 이슈 없음. 최종 head의 전체 CI는 PR 체크에 기록한다.
+- 실제 화면에서 1,000개 대화의 400개 window·live 중 읽던 범위 유지·최신 복귀, 1,200개 소식의 500개 window·끝까지 조회·최신 복귀를 확인한다. 긴 스트림 도중에도 주기적인 소식 refresh가 진행되고 조용해지면 요청이 멎는 것을 검증한다.
+- 초기 실패 로그와 합성 화면은 worktree `.local/`에 보존한다. 무제한 전체 앱 RAM 보장, 실제 사용자 작업의 장기 RSS, release 패키지 성능으로 일반화하지 않는다.
+
+---
+
+# 2026-10-29 · 프로덕션 3회 검토 및 최종 공증 DMG
+
+- 정본: [PRODUCTION-REVIEW](PRODUCTION-REVIEW.md), [PR #291](https://github.com/kys42/agent-office/pull/291), Issue #290, `feat/production-readiness`.
+- 최종 앱 source `c453a57`: macOS arm64 / Node 25.5.0 / Electron **44.10.0**. 최초 44.5.1 검증 뒤 보안 갱신을 적용했고 npm audit **10건 → 0건**이다.
+- 단위 **806개**, typecheck·production build·format·MCP 통과. 로컬 UI **426 pass + 6 timeout**, 같은 코드의 실패 6개 단일 worker 재실행은 **6 pass**. 전체 suite 432개. 최초 실패 자료를 보존했다.
+- [Linux / Node 24 CI](https://github.com/kys42/agent-office/actions/runs/40812354016)와 [Windows CI](https://github.com/kys42/agent-office/actions/runs/40812353794) 모두 통과. Windows는 portable 패키징과 실제 native 3종 공급자 smoke를 포함한다. PR 최종 head CI는 PR 상태를 따른다.
+- **앱·DMG 공증 및 설치 smoke 통과**: Developer ID/Team ID, deep strict 서명, stapled ticket, Gatekeeper, checksum/아이콘/metadata. DMG에서 임시 설치한 앱으로 첫 실행·설정·저장·펫/row/floor·3종 공급자·IPC 격리·앱 신원·잘못된 privacy URL 거부 확인. 별도 packaged 미니 터미널 smoke도 통과.
+- 외장 SSD mountpoint 거부는 `/private/tmp` mountpoint로 해결했다. 설정 DOM ready/native ready-to-show 사이 테스트 race는 실제 창 표시를 기다린 뒤 blur 검사하도록 수정했고 같은 DMG 재검수가 통과했다.
+- quiet 실행에서 OS 포커스/Dock 검수와 별도 card-windows focus smoke는 생략했다. 인터넷 다운로드 최초 실행, 다른 물리 Mac/Intel, 실제 사용자 DB 업그레이드·권한 연속성을 검증한 것은 아니다.
+- UI: 라이트/다크, 480px, 키보드 펼침, 실패/재시도, 연결 중단/patch gap/demo 전환, 동시 창 전송 확인/재시작/첨부 정합성. Impeccable detector 0건.
+- 산출물: `release/Agent-Office-0.1.0-macOS-arm64-c453a57.dmg` 및 manifest/체크섬. 전체 SHA·공증 ID는 정본 검토 문서에 기록했다. `.local/production-*`는 로컬 근거이며 Git에 포함하지 않는다.
+- 설치된 Applications 앱과 사용자 DB는 보존했다. 공개 게시/OTA/main 병합은 하지 않았다. GitHub 서명 environment는 조회 404로 준비 여부 미확인이며, 이번 성공은 기존 로컬 Apple 프로필 기준이다.
+
+---
+
+# Codex 원격 owner 전송 · 2026-10-21
+
+- main `9dd9dc0` 기준 별도 `codex/office-remote-send` worktree에서 구현했다. 원래 checkout의 미커밋 문서는 수정하지 않았다.
+- 전체 단위 576개 통과 후 오프라인 매핑 유지 회귀 1개를 추가해 관련 3개 재통과. 타입·웹/desktop 빌드·전체 포맷 검사 통과. 원격 UI 3개 통과(경로, 재조회, draft 유지, Claude에 Codex 안내 미표시).
+- `node --import tsx scripts/codex-remote-smoke.ts`: 격리 Electron UI에서 host 선택 → 실제 HTTPS로 peer 권한 확인 → 합성 Codex 원격 owner v3 단일 dispatch → peer 권한 회수 시 추가 dispatch 없음 통과. `.local/codex-remote-smoke/`의 설정/대화 캡처로 시각 검수했다. compact composer에서 경로가 숨겨지는 CSS도 수정했다.
+- 회귀는 정확한 host·opaque ID·provider, 충돌 host, owner/설정 부재, 권한 회수, 베타 해제, 기존 오프라인 매핑 편집, pending/sent 저널 재시작 및 다른 경로로 재전송하지 않음을 확인한다. 독립 리뷰의 UI/설정 2건을 수정하고 재리뷰에서 추가 finding 없음.
+- 실제 Mac mini 연결은 read-only discovery에서 현재 owner를 찾지 못했다. 실사용 대화에 테스트 메시지는 보내지 않았으며 실제 Mac mini 종단 전송, Windows native 동작은 확인하지 않았다. Codex에서 해당 원격 대화를 열고 host 매핑을 선택한 뒤 재조회가 필요하다. 설치된 앱과 원격 exporter는 이번 PR 작성으로 바뀌지 않는다.
+- CI 결과와 최종 SHA는 PR을 따른다. 열려 있는 PR의 worktree를 유지하며 자동 병합하지 않는다.
+# 2026-10-20 · Developer ID 패키징 검증
+
+- main `9dd9dc0` 기반 macOS arm64의 서명 개발 산출물에서 `codesign --verify --deep --strict`, Apple 신뢰 체인·Developer ID Application OID·Team ID·bundle ID 요구 조건을 검증했다. `codesign -dvv`에 runtime 플래그와 secure timestamp를 확인했다. 원본 Electron UUID와 패키징 후 UUID가 다르다.
+- 타입, 빌드, 포맷, MCP, 단위574개 및 actionlint 통과. 신규 검사는 잘못된 서명 구성, Mach-O 손상/중복/결정성, 공증 timeout 뒤 같은 ID 재개·바이트 변조·Invalid·불확실한 제출 재전송 차단을 포함한다. 공증 호출은 이 회귀 테스트에서 모의 실행이며 Apple 실제 공증 성공 근거가 아니다.
+- 실제 Apple preflight는 기존 Team API 키를 사용했으나 계약 미동의/만료403으로 중단됐다. 앱/DMG 공증·stapling·Gatekeeper 승인 및 다운로드 경로 검수는 미완료다.
+- native 전체 검사 실패: quiet settings 창 `kept open on blur`, focus 실행 카드 `the card holds the keyboard after asking for it`, 다중 카드 `blur closes only the ordinary preview` 이전 visibility poll. settings visibility 실패는 패키징 전 개발 Electron에서도 재현했다. 서명 앱은 그 외 실제 실행/합성 세 공급자 수집·IPC·설정 렌더링까지 진행했지만 전체 native 통과로 취급하지 않는다.
+- 실행 중인 Applications 앱/사용자 DB를 이번 작업에서 교체하지 않았다. 서명 앱 설치 후 OS 권한 창, 실제 Windows peer snapshot/detail 및 문서 폴더 권한 연속성은 별도 검수한다. 작업 상태와 최종 source SHA는 PR/결과 카드에 기록한다.
+
+# tmux 기존 대화 재개 · 2026-10-19 (Issue #178)
+
+- 단위505개 통과(동시 실행2). 기본 병렬 전체 실행은 기존 hot-path stop 타이밍 테스트가 한 번 실패했고 동시 실행을 줄인 전체 재실행에서 통과했다. 신규8개는 취소·중복/충돌·재검사·미설치·종료·dead pane을 검증한다.
+- 신규 UI3·기존 카드UI24 통과. 380×480 팝업의 재개 안내/고정 footer·재접속/복사·취소·오류재시도·privacy·remote를 확인하고 합성 캡처로 시각 검수했다.
+- `node --import tsx scripts/tmux-resume-smoke.ts`는 이 Mac의 Homebrew tmux에 독립 서버와 임시 합성 CLI만 띄워 생성/인수/재조회/재사용/dead pane 재개/종료를 검증한다. 서버와 임시 파일은 finally에서 정리한다. 실제 사용자 대화/모델 실행은 하지 않았다.
+- 타입·웹/데스크톱 빌드·Electron 격리 smoke·MCP 통과. native smoke는 새 preload API와 원격/OpenClaw 실행 거부도 확인한다. 독립 리뷰의 확인창 blur 보류·dead pane 처리를 반영하고 재검토 승인. 최종 CI·배포는 PR에 기록한다.
+
+# 2026-10-18 · 모바일 웹 (#169)
+
+- PR164/162가 병합된 main `8c7fd56`에서 별도 worktree와 프로필로 구현했다. 기본 꺼짐/미사용 무저장, 기존 IPC·로컬 DB 보존, 인증·가시 범위·중복 방지·권한 회수 경계를 검증했다.
+- 최종 단위 497개, 타입·웹/데스크탑 빌드·포맷 통과. 기존 UI 포함 238개 및 이후 추가한 race 회귀를 포함한 모바일 UI 8개를 검증했다. 최종 통합 UI 전체 결과는 PR CI에 기록한다.
+- 격리 Electron → 실제 HTTP → 390px Chromium → 합성 Codex Desktop owner 단일 전송, 코드 변경과 서버 종료 smoke를 통과했다. MCP 및 기존 Desktop 합성 전송 회귀도 통과했다. 실제 사용자 대화에 테스트 메시지는 보내지 않았다.
+- 독립 리뷰에서 VPN 주소 소실 후 끄기 실패, 원격 대상 조회 중 권한 회수, 로그아웃 뒤 늦은 응답, 이전 화면의 전송 응답이 새 pending을 지우는 문제를 수정했다. 추가 리뷰의 원격 공유 축소 시 전문 잔존과 로컬 페이지 사이 누락도 수정하고 UI 회귀로 확인했다. 최종 재리뷰 결과와 CI는 PR을 따른다.
+- 실제 Tailscale 인터페이스에서 로그인·세 사무실 목록 조회 및 로그아웃을 확인했다. 다른 컴퓨터에서의 Tailscale 접속 시도는 해당 컴퓨터에 Tailscale 앱이 없어 완료하지 못했다. 실제 휴대폰 Safari 터치·키보드 및 Windows 네이티브 모바일 서버 검수는 미완료다.
+- 사용자가 지정한 접속 코드는 ignored 미리보기 프로필에만 적용했다. 개인 코드·연결 정보는 코드/문서에 기록하지 않는다. main 병합과 설치 앱 업데이트는 별도이며, 미리보기 실행을 위해 worktree를 보존한다.
+
+# 2026-10-18 · LAN 베타 병합 전 로컬 호환성 리뷰
+
+- 최신 main의 Windows 창·데이터 경로 변경을 공통 Desktop 전송과 베타에 통합했다. 충돌은 QA/작업 기록의 추가 섹션이며 두 이력을 보존했다.
+- 독립 리뷰에서 베타 비활성 상태에도 `remote-office:`로 시작하는 일반 로컬 메모·검색이 거절되는 문제를 재현했다. 참조가 들어가는 인자만 검사하도록 수정하고 기본 꺼짐/연결 없는 켜짐의 텍스트 보존 및 원격 batch·규칙 쓰기 거절을 함께 검증한다.
+- Mac mini의 구버전 Codex는 필요한 IPC를 지원하지 않았다. 지원 버전 업데이트와 사용자 대화 복원 후 target 1개 및 실제 Office 전송 journal sent/native turn-start 성공을 확인했다. 에이전트의 임의 테스트 메시지는 보내지 않았다. 다른 과거 대화는 자동 재개하지 않는다.
+- 최종 통합 SHA의 단위·UI·Electron/HTTPS 합성 smoke·Linux/Windows CI와 리뷰 결과는 PR162/164에 기록한다. main 병합은 설치된 앱/별도 exporter를 자동 업데이트하지 않는다.
+
+# 2026-10-18 · Desktop 공통 전송을 LAN 베타에 반영
+
+- 일반 앱용 PR164 공통 adapter를 베타에 병합했다. v1 wire의 kind=codex/status=desktop으로 표시하고 새로운 인증/API 필드는 추가하지 않았다. sender는 owner 조회 후 dispatch 직전 기존 authorized 검사를 다시 호출한다.
+- 베타 전체 단위484, 관련 UI26, 실제 Electron→합성 HTTPS 단일 dispatch/베타 해제/draft 교체 거절, Electron→합성 Desktop owner 전송 통과.
+- 실행 코드 59e7911의 exporter 번들을 MacBook Pro에 반영하고 로컬 격리 베타 프로필을 재시작했다. 실제 LAN targets: 20개 중 9개 전송 가능, 로컬 공통 adapter: Codex 10개 중 Desktop 3개 확인. 모두 읽기 전용 조회이며 실제 사용자 대화 전송은 0회다.
+- 원격 endpoint의 번들 SHA256과 로컬 빌드 동일 확인. 기존 설치 앱·원본 DB·credentials를 교체하지 않았다. 개인 대화 실전송과 Desktop 업데이트 후 호환성은 별도 검증 범위다. 최신 CI는 PR162에 기록한다.
+
+# 2026-10-18 · Codex Desktop 공통 전송 (#163 / PR #164)
+
+- main 기준 별도 worktree에서 구현했다. CLI 대기열과 Desktop IPC를 공통 router에서 구분하고 일반 앱·LAN 베타가 재사용한다. 베타 flag 없이 일반 앱 경로도 동작한다.
+- 전체 단위 464개 + 추가 CLI 라우팅/권한 회귀 2개, 카드 UI24, 타입·포맷·웹/데스크탑 빌드 통과. 실제 Electron renderer→trusted IPC→격리된 합성 Desktop owner에서 정확한 대화·설정 상속·단일 dispatch를 확인했다.
+- 같은 UID의 비공개 socket, owner/settings 확인, 부분 프레임, 잘못된 응답/연결 종료/권한 회수·불확실성 시 재전송 금지를 검증했다. 독립 리뷰에서 발견한 owner 조회 중 설정 해제 경쟁을 dispatch 직전 비동기 재검사로 보완했고 관련20 테스트 재통과 및 재리뷰 완료.
+- 실제 양쪽 Mac에서는 읽기 전용 discovery/settings만 확인했다. 실제 사용자 대화 전송은 미검증이다. 비공개 IPC 업데이트 호환성 한계는 TERMINAL.md를 따른다. 앱 DB/인증/설정은 수정하지 않는다.
+- 메인 병합/설치 앱 교체는 하지 않았다. 최종 CI와 LAN 베타 미리보기/송신기 반영 근거는 PR164·PR162에 기록한다.
+
+# 2026-10-18 · 사무실 분리와 원격 채팅 후속 (#161)
+
+- 합성 UI에서 내 컴퓨터/MacBook Pro 전환, 각각의 프로젝트 구역, 원격 입력창 목적지, 읽기 전용 연결의 입력창 미노출을 확인했다.
+- 실제 HTTPS와 가짜 native sender로 읽기 token의 전송 거절, 기존 terminal-send 설정과 scope, requestId 중복/충돌/재시작/진행 중 중복, native 조회 중 권한 회수, 수신기 전송 라우팅과 비밀 제외, 원본 DB 바이트 불변을 검증한다.
+- QA 격리 보완: 최초 UI 실행은 기존 Playwright 기본 개발 서버를 띄운 후 브라우저 미설치로 즉시 실패했다. 이때 기본 수집기가 기존 로컬 DB를 잠시 열었으므로 자동 관측값이 갱신됐을 수 있다. 설정 변경 RPC·채팅 전송은 없었고 해당 테스트 프로세스 종료를 확인했다. 원본 DB를 되돌리지는 않았다. 이후 webServer를 `.local/ui-tests/`의 전용 DB·빈 공급자 경로로 고정하고 기존 서버 재사용을 금지했다. 개인 앱/다른 작업의 브라우저 설치 프로세스는 중단하지 않았다.
+- LAN smoke는 private connection의 sendToken을 제거한 사본으로만 실행한다. 실제 사용자 에이전트에는 테스트 메시지를 보내지 않는다. 실제 LAN Electron smoke에서 원격 19개 조회·상세·읽기 전용 권한 거절·베타 해제·UI 오류 0을 확인했다. 실제 원격 command targets는 현재 전송 가능 0개를 반환했다. 전송 API 허용과 실행 중인 지원 대상 존재 여부는 구분한다.
+
+- 관련 단위 18개와 전체 단위 471개(이후 profile 경로 회귀 1개 추가), 방/기존 전송 복구 UI 8개, typecheck/build/format 통과. 실제 Electron→HTTPS→합성 sender 전송 1회 및 draft 교체/베타 해제 후 전송 거절 통과. 독립 리뷰의 profile 경로와 원격 구역 편집 경계를 수정·재검토했다. 최종 CI는 PR에서 확인한다.
+
+# 2026-10-18 · 여러 Office 연결 베타 (#161)
+
+- 독립 diff 리뷰에서 summary-only 서버의 카드 열기가 전체 peer를 거절 처리하는 문제와 heartbeat 발췌가 읽은 긴 상세를 덮는 문제를 재현·수정했다. capability를 wire/화면에 명시하고 발췌/full 이벤트를 구분한다. 권한 축소 시 열린 상세를 초기화하고 늦은 상세 응답의 epoch/멤버십/권한을 다시 검사한다. 관련 회귀를 추가했다.
+
+- 별도 worktree에서 구현하고 기존 main의 미커밋 문서와 설치 앱을 보존했다. 원격 실행 중인 Office의 SQLite를 readOnly로 읽는 별도 번들만 LAN 인터페이스에서 기동했다. 테스트 출력에는 실제 대화 대신 집계만 남겼다.
+- 실제 LAN 조회: 원격 Codex 세션 19개, 현재 컴퓨터의 읽기 전용 DB 조회 7개를 메모리에서 합쳐 26개의 고유 ID를 확인했다. 실행 중 세션 수는 변할 수 있다.
+- 격리 Electron 프로필의 합성 로컬 세션 1개 + 실제 원격 19개: 베타 기본 꺼짐, UI 토글과 연결 파일 등록, 원격 상세, resume/reveal/send/patch 거절, 원격 카드와 composer 미노출, 베타 해제 뒤 로컬만 표시, pageerror 0을 확인했다.
+- 최종 전체 단위 466개, federation 12개와 기존 paging 11개 통과. 재접속/epoch 교체/권한 회수/중복 start 방지, 프로젝트 태그 복원, summary-only 카드, 권한 축소와 긴 상세 본문 보존을 포함한다. 타입 검사·build·전체 format·MCP 5도구 smoke 통과. 초기 PR CI core와 UI 회귀가 통과했고 리뷰 수정 후 최종 SHA 결과는 PR에서 확인한다.
+- 기존 `test:desktop`은 초기 두 실행에서 창 포커스와 비동기 DOM 선택 실패가 있었다. 변경 전 main e621e2d의 임시 빌드와 최종 변경 빌드 모두 별도 실행에서 통과했다. 기존 테스트의 환경/타이밍 민감성을 관측했으며, 이번 기능 전용 smoke는 async 상태 조회를 명시적으로 polling한다.
+- DB 바이트 불변·실제 TLS·잘못된 pin에서 HTTP 요청 0·인증 실패·범위 축소·송신 비활성화는 합성 DB/인증서 단위 테스트로 검증한다. 원격 로컬 DB를 복제하거나 덮어쓰지 않았다.
+- 실제 Tailscale, 외부 계정, 인터넷 공개 운영, 원격 쓰기/터미널 제어, 원격 전문 검색/소식/이전 대화 페이지는 검증/구현 범위 밖이다. 기존 설치 앱 교체·main merge·DMG 배포는 수행하지 않았다.
+
+# 2026-10-18 · Windows 기본 셸과 portable (#81, #165)
+
+- 환경: Windows 10 Pro 22H2 build19045 x64, Node24, Electron44.5.1. main e621e2d 기반 별도 worktree. 기존 일반/베타 설치·개인 프로필을 수정하지 않았다.
+- `package:win` 생성 EXE로 `test:windows` 통과: native caption 영역/메뉴 숨김/Segoe UI/Ctrl+K·선택·복사/light-dark/native 배경/최대화·최소화 복귀/1050×740/닫기→트레이·다시 열기. 클립보드는 테스트 전 저장하고 테스트 글이 남은 경우에만 복원한다. OS 창 캡처의 light/dark native 버튼도 육안 확인했다.
+- 같은 packaged EXE의 기존 `test:desktop` 통과: 합성3종 수집·펫/줄/바닥·팝업·IPC 저장·렌더러 격리·온보딩. MCP5도구 smoke와 관련 Windows/카드/vendor 단위16개 통과.
+- Windows 전체 단위456 중447통과/9실패 관찰. 미수정 main의 해당40개에서도 같은9실패 재현(31통과). POSIX 경로·shebang·chmod 가정8개는 #166에서 추적한다. vendor checksum1개는 `.gitattributes`의 LF 보존 후 관련16개 재실행에서 통과했다. 전체 Windows 단위가 모두 통과했다고 주장하지 않는다. Linux 전체 Verify와 Windows PR CI는 별도로 확인한다.
+- 첫 native 테마 검수는 Playwright의 기본 light emulation 때문에 dark media 확인이 실패했다. `emulateMedia({colorScheme:null})`로 OS 테마 관측을 복원한 뒤 nativeTheme 갱신을 검증했다. caption 배경은 대소문자 정규화해서 대조한다.
+- 격리된 빈 공급자 경로/전용 DB로 관련 browser UI46개 통과. 최초 실행은 Chromium 미설치로 시작되지 않았고 해당 런타임 설치 후 재실행했다. 개인 공급자 경로를 테스트 수집기에 주지 않았다.
+- 독립 diff 리뷰에서 같은 dirty HEAD의 두 번째 패키징이 기존 output을 skip하고 성공할 수 있음을 발견했다. staging과 release를 빌드마다 고유 경로로 분리하고 산출물1개를 강제 검사해 오래된 EXE 전달을 막는다. 재실행 검수/최종 CI는 PR에 연결한다.
+- Snap/Win+Z는 Windows11 수동 검수 대상이며 이 Windows10 검증에 포함하지 않았다. 다중 배율·Narrator·WSL·실제 Windows↔Mac LAN·서명/업데이트는 미검증. 기존 #81과 새 #165/#166/#167에 작업 경계를 남겼다.
+
+# 2026-10-15 · 팝업 위치와 독립 카드 창 (#157)
+
+- 팝업 헤더에서 인수인계 제거/동료 핀 메뉴 이동, 위치 기억과 카드 고정의 독립 상태, 실패 시 상태 유지, 초기 target 복원, 좁은 창·키보드·대화/메모를 관련 UI32로 확인했다.
+- 실제 Electron 합성 데이터로 독립 고정 창 2개 + 일반 팝업, 기존 고정 창 재사용, 새 팝업의 비껴 열기, 고정 창의 내용/좌표/초안 보존, blur/닫기/고정 해제 격리, main 창의 카드 제어 거절, 재실행 후 위치 복원과 해제를 확인했다. macOS panel은 활성화 뒤 저장 위치를 적용한다.
+- `test:package`가 실제 DMG 앱으로 일반 native 검수와 새 `test:cards`를 실행한다. 최종 리뷰/CI/패키지 검수 근거는 PR/이슈에 남긴다. 개인 프로필·실제 세션은 테스트에 사용하지 않았다.
+- 독립 리뷰의 두 경계를 실제 창으로 재현·수정했다. 북마크 버튼의 대화 위치와 다른 pinned 창 재사용 시 anchor 전달·원래 창 보존을 확인하고, pinned→preview 대화 선택 뒤 stale preview pin-on은 거절되며 같은 대화의 고정 창이 두 개 생기지 않음을 확인했다.
+
+# 팝업 읽기와 Codex 화면 선택 · 2026-10-15 (Issue #156·#159)
+
+- PR/이슈 접기 화살표를 스크롤 영역 밖에 고정했다. 북마크는 별도 상세에서 저장된 메시지와 요청·진행을 시간순/화자로 구분하고 메모를 분리한다. Codex 앱 열기와 검증된 Orca/tmux 이동을 분리하며 화면 조회를 queue 조회에 묶지 않는다.
+- 단위450, 관련 터미널68, 타입 검사, 웹/데스크탑 빌드·포맷·MCP 통과. 시간순/중복/같은 시각의 저장 메시지 순서와 원본 불변성도 단위로 검증했다.
+- 관련 UI34 통과: 전체 카드/380×480 팝업의 상세 폭과 footer 도달성, 역할별 시간순 대화·메모 Markdown 일치, 원본 없는 사본, 개인정보 숨김, Esc/배경 닫기·초안/포커스 복구, 긴 PR 목록의 화살표, Codex queue/화면 조회 상태별 독립 이동을 확인했다.
+- 격리된 합성 프로필로 실제 Electron smoke 통과. 저장된 요청 상세와 메모 보존, 기존 3종 수집·IPC·렌더러 격리·첫 실행 안내·펫/줄/바닥·Dock을 함께 확인했다. 독립 정적 리뷰 지적의 테스트 버튼명과 메모 제목 CSS 범위를 보완했다. 전체 UI·원격 CI·최종 배포 상태는 PR에 기록한다. 실제 사용자 터미널에 테스트 입력을 보내지 않았다.
+
+# 북마크 Markdown 스타일 통일 · 2026-10-15 (Issue #154)
+
+- 대화의 렌더러를 `MessageMarkdown`으로 추출해 저장한 본문·요청/진행 맥락·덧붙인 메모에 재사용한다. 같은 `message-text` 스타일을 쓰고 제목/메타 스타일이 본문에 새어 들지 않게 범위를 좁혔다. 긴 메시지는 원문 대신 일반 발췌를 만들지 않고 높이로 접는다.
+- 합성 팝업380px/전체 카드 UI2에서 제목·강조·목록·표·긴 코드, 링크 열기와 비활성 HTML/이미지/위험 주소, 원문 복사, 펼침/접힘/링크 포커스, 카드 폭, 실제 대화와 글꼴/크기/행간/색 일치를 확인한다. 기억 서랍의 같은 북마크 표시도 확인한다.
+- 관련 UI36, 전체 단위449, build/typecheck/format 통과. 이후 최종 테스트 보완·독립 리뷰·CI·DMG/설치 검수 결과는 PR/작업 카드에 기록한다. 원본 checkout의 미커밋 작업과 개인 프로필을 보존하며 합성 데이터만 검수에 사용한다.
+
+# 질문 답변 최종 제출 · 2026-10-14 (Issue #151)
+
+- 단일 질문 선택 뒤 추가 검토 화면을 여는 합성 터미널에서 답이 제출되지 않는 것을 수정 전 재현했다. 단수·복수 제출 문구를 파싱하고 첫 Enter 뒤 실제 화면으로 즉시 종료와 검토 단계를 구분한다.
+- 질문 어댑터 단위31 통과: Orca/tmux 선택·직접 입력, 단일/복수 질문, 오래된/빈 전환 프레임, Cancel 커서에서 제출 이동, 변경된 답·다른 질문·불완전·알 수 없는 검토 거부, 최종 제출 뒤 해석 불가능한 화면은 미확인 표시. 기존 즉시 종료 질문에는 추가 Enter가 없다. 요청 카드 UI10, build/typecheck/format/MCP 통과.
+- 실제 사용자 터미널에 테스트 답을 보내지 않았다. 전체 단위와 독립 리뷰·원격 CI·clean DMG 및 설치 결과는 PR/작업 카드에 기록한다.
+
+# 전송 말풍선·Claude 입력창 복구·프로젝트 구역 · 2026-10-14 (Issue #146·#147)
+
+- 사용자 프로필은 읽기 전용으로 프로젝트/workspace 메타데이터만 확인했다. 같은 root에 Git common-dir 기록과 path-only 기록이 함께 있어 깃발이 나뉨을 확인했다. 원문 메시지·터미널 입력을 테스트에 사용하지 않았다.
+- 신규 단위6 및 전체 단위427 통과: 입력 정규화·실행별 이벤트 소비, 정확한 worktree만 복구/별도 clone·폴더 접두사·충돌 근거·명시적 구역 분리, snapshot/detail/hot row 일관성과 원본 보존, terminal draft 검사에 키 입력이 없음·앞자리 소유권·승인 창 거부·partial 표시.
+- 신규 UI6 및 기존 관련 UI35 통과(Vite5198): 기록이 전송 결과보다 먼저 도착/30초 늦은 응답, 발췌 요청 확인, 정상 밝기·개별 숨김/재전송 없음, 이전의 이미 글이 있다는 오류를 fresh draft 확인 창으로 복구, 명시적 교체·바뀐 글 재확인·partial 터미널 이동·검사 실패 시 오류/내 초안 보존. 380×480 작은 카드에서도 오류 이유와 교체 버튼이 화면 안에 표시됨을 확인했다.
+- typecheck/build/format/MCP 및 실제 Electron 전체 smoke 통과. 새 readonly draft IPC의 실제 preload/main 연결과 live terminal 없는 합성 동료의 null 결과를 검증했다. 기존 대화 스크롤·메모/초안·3종 수집·모드 전환·Dock도 함께 통과. 독립 리뷰·원격 CI·최종 clean DMG 및 실제 앱 교체 근거는 PR/작업 카드에 기록한다.
+- 독립 리뷰의 P2: 연결 worktree 이름이 Git 표시명과 다를 때 구역 복구가 `Session.project`를 바꿔 설정의 원래 제외 대상을 없앴다. `workspace.zoneName`으로 표시 이름만 분리하고 원래 프로젝트 필터 이름은 보존했다. 한 깃발 표시와 두 원래 이름의 개별/전체 제외를 합성 DB로 검증했다. 숨겨진 동료를 새 복구 근거로 사용하지 않는다. 최종 source·재검증 결과는 PR/작업 카드에 기록한다.
+
+# 2026-10-14 · Codex 공통 화면 연결 (#148)
+
+- 관련 테스트 69개·전체 단위 테스트 432개, 타입 검사, 웹+데스크톱 빌드, 포맷 검사, MCP 5도구 smoke 통과.
+- 독립 리뷰에서 조회가 느린 다른 화면 때문에 선택한 제목이 오래될 수 있는 경계와 부분 조회 실패로 중복 후보가 사라지는 경계를 재현했다. inventory 완료 후 선택 화면의 프로세스/호스트/제목 재확인과 `uncertain` 판정으로 수정했으며 재리뷰 통과. 첫 커밋 원격 CI는 UI 217 통과/개인기록 의존 1 제외까지 성공했다.
+- 테스트 범위: 정확한 현재 제목 ID, 별도 전송/이동 목적지, named tmux 우선, 오래된 resume 인수 무시, 대화 전환의 fresh 조회, 중복 화면, 프로세스/호스트 종료, PID 재사용, foreground/PTY 소유자 확인, 공개 응답의 private 주소 제외, 기존 Claude 전송/입력/이동 회귀.
+- 실제 tmux smoke: 임시 native codex 형태의 C 테스트 화면으로 OSC 제목→프로세스→named tmux 패널 발견, 공통 이동, 제목의 대화 변경으로 이전 대상 해제, 종료 후 대상 해제를 확인했다. 실제 사용자 Codex 화면이나 모델 입력을 변경하지 않았다. 임시 tmux 서버/바이너리는 정리했다.
+- Orca smoke: 합성 응답 검증은 통과했다. 격리 worktree에 테스트 화면을 만들려는 CLI 요청이 `Timed out waiting for terminal handle after creation`으로 실패했다. 이후 해당 worktree의 live terminal 목록은 비어 있었다. 실제 Orca 이동은 이번 검증에서 성공으로 보고하지 않는다.
+- 현재 ID가 없는 Codex 제목과 중복 화면은 자동 이동하지 않는다. 제목 설정은 사용자가 `/title` 또는 기존 `[tui].terminal_title`에서 적용하며 앱은 설정 파일을 변경하지 않는다. 화면 검증 직후의 대화 전환을 원자적으로 막는 호스트 API는 없다.
+
+# 대화 스크롤 및 이전 대화 자동 로딩 · 2026-10-14 (Issue #144)
+
+- 최신 main b2ad14c에서 별도 worktree와 Vite5196을 사용했다. 빠른 위로 wheel, 느린 페이지 로딩 중 추가 이동, 스크롤바 없는 도구 페이지에서 자동 로딩이 실패하는 것을 합성 데이터로 재현했다.
+- 신규 UI6 통과: 자동 이동 직후 wheel/PageUp, 아래로 돌아오면 최신 대화 따라가기, 상단 cooldown 뒤 자동 재개, 상단을 벗어나면 예약 취소, 느린 응답 중 읽던 메시지 위치 보존, 숨긴 도구 페이지 자동 탐색 및 끝 표시 제거. 기존 관련 UI40(업무 카드·팝업·북마크·페이징·초안) 통과. PageUp 뒤 Mac Chromium의 End 키가 스크롤하지 않아 복귀 검수는 실제 wheel 입력으로 확인한다.
+- 단위421, typecheck/build/format/MCP 통과. 실제 Electron의 합성 Claude120개 이력과 수집기·IPC로 위로 wheel, 클릭 없이 가장 오래된 메시지까지 페이지 조회, 버튼 제거를 검증하고 전체 native smoke 통과. 독립 리뷰·원격 CI·clean DMG 및 설치 앱 교체 결과는 PR/작업 카드에 기록한다.
+- 원본 checkout의 미커밋 변경과 실제 사용자 DB는 테스트에 사용하지 않았다.
+
+# 맥북 앞 미니 로봇 앱 아이콘 · 2026-10-13 (Issue #122)
+- 사용자 승인한 D 로봇+맥북 시안을 투명 PNG1024px로 정규화하고 Mac ICNS16–1024px로 변환했다. ICNS에서 추출한1024px PNG와 원본 PNG의 SHA256이 같고 재생성 ICNS도 동일하다.
+- 번들은 ICNS, Mac 런타임 Dock은 dist/icon.png, 브라우저 favicon은 같은 PNG를 사용한다. 이전 미사용 SVG는 제거했다. 메뉴바 흑백 template 심벌은 유지한다. npm run icon:mac으로 재생성한다.
+- 단위380·build/format·native 합성3종/설정IPC/격리/온보딩/모드 전환 Dock 유지 통과. DMG 설치 검사에는 실제 번들의 CFBundleIconFile이 지정한 파일과 public/icon.icns의 SHA256 비교를 추가했다.
+- 최신 main de3df5d 기준으로 작업했다. 독립 리뷰·CI·clean DMG 및 설치 앱 교체/아이콘 검수 결과는 PR/작업 카드에 남긴다. 원본 작업 폴더 미커밋 변경·개인DB·이전 설치앱은 보존한다.
+
+# 말풍선 표·목록·줄바꿈 복원 · 2026-10-13 (Issue #98)
+- 원인: InlineMarkdown이 ul/ol/li/table을 unwrap하고 문단을 span으로 이어 붙였다. BubbleMarkdown은 제목·문단·soft break·중첩/번호/체크리스트·표를 보존하며 이미지·HTML·비웹 링크는 활성화하지 않는다. 기존 물결표/웹 링크/개인정보/원문 복사 정책을 유지한다.
+- 본문은 div로 바꿔 블록 요소를 유효하게 담고, 각 모드의 접힌 2/3/5줄 분량 및 펼친 92/96/112px 높이를 유지한다. 표는 자체 가로 스크롤과 정렬을 유지하고 방향키를 책상 넘김에 전달하지 않는다. snapshot 갱신에도 표 스크롤을 보존한다.
+- 새 UI8개: 네 모드의 문단/한 줄 바꿈/목록/번호 시작/중첩/체크리스트/물결표/높이/복사/접기, 좁은 창의 넓은 표와 키보드/갱신/링크, 실제 #card 표 유지, 개인정보 가림, 비활성 HTML/이미지/링크. 기존 검수2개는 b 본문 대신 의미 있는 .speech-text를 선택한다.
+- 단위379·type/build/format 통과. 최종 전체 UI163 통과/개인기록 의존1 제외(CI=1); 이전 실행의 실패는 오래된 b 선택자와 수집기 없는 검수 환경이었다. 선택자를 고치고 개인 수집기 없이 CI 조건으로 전체 재검수했다. 새 기능8개와 팝업/답장/열람/호버/선택·링크/페이징 회귀 모두 통과.
+- 합성 list-expanded/table-expanded 화면을 확인했다. 검수는 독립 worktree의 Vite5187만 사용했고 원본 미커밋 변경·개인DB를 보존한다. 독립 리뷰·원격CI·최종 Mac 앱/DMG 설치 검수 결과는 PR/작업 카드에 기록한다.
+
+# 한 줄 사무실 말풍선 다듬기 · 2026-10-13
+
+- 한 줄·바닥 책상의 오른쪽 답장 도구에서 하늘색 배경을 빼고, 말풍선 호버·키보드 포커스·답장 작성 중에만 표시한다. 숨은 답장/닫기 도구는 클릭을 받지 않고 키보드 포커스로 나타난다. 포커스가 있는 책상의 겹침 순서도 올린다.
+- 공유 말풍선의 빨간 점은 아직 열지 않은 미읽음 새 소식에만 점멸한다. 열어봄·읽음·이전 소식에는 점멸하지 않는다. 호출 후광과 움직임 줄이기도 같은 경계를 따른다. 펼침 화살표 경로에 view receipt를 추가했으며 seenAt/미해결 질문 상태는 자동 변경하지 않는다.
+- 답장 입력 중 Esc는 먼저 입력 포커스를 벗어나 초안을 유지하고 다음 Esc로 닫는다. 입력창 초안 확인 질문은 먼저 취소하는 기존 순서를 보존한다.
+- 새 UI 8개: 도구 배경/호버/포커스/클릭 통과, 초안 Esc/오발송 없음, 줄·바닥·큰 사무실 펼침 view/접은 뒤 점멸 중단/새 메시지 다시 표시, 미해결 질문 후광, 움직임 줄이기. 기존 숨은 도구를 바로 클릭하던 4개 검수는 말풍선에 마우스를 올린 뒤 실제 버튼을 누르도록 조정했다.
+- 관련 UI33·단위379·type/build/format·native 합성3종/IPC/격리/Dock 유지/팝업 및 MCP5 도구 통과. 전체 UI는152 통과/개인기록 의존1 제외/페이징13 테스트1 실패. main385cdca의 CI38235495054와 같은 이전 대화 버튼 타임아웃이며 변경한 말풍선 범위 밖이다. 해당 페이징을 분리해 재검수하고 결과를 PR에 기록한다.
+- 독립 리뷰에서 첫 Esc가 body로 포커스를 보내 펫·큰 사무실에서 두 번째 Esc가 답장 폼에 도달하지 않는 회귀를 재현했다. 첫 Esc는 폼에 포커스를 유지하도록 보완하고 펫/큰 사무실의 초안 유지→두 번째 Esc 닫기 검수를 추가했다. 관련 UI35·type/format 통과. 페이징 분리4개와 첫 커밋의 CI 한 실행은 통과했으며 다른 실행은 동일 baselinepaging13 실패였다.
+- 시각 검수: 합성 fixture의 .local/row-idle.png와 row-hover.png 확인. 검수 서버는 독립 worktree의 5186 포트/Vite만 사용하며 개인 수집기와 DB를 공유하지 않는다. 목록·줄바꿈 뭉침은 기존 이슈98 후속으로 남긴다.
+
+# 팝업 업무 카드를 채팅형으로 · 2026-10-12 (Issue #86)
+- 2차(사용자 시안 선택: 글래스 + C 배치): 머리줄 인수인계·원본 아이콘, 최근 작업 2줄 + 더 보기, 탭 4개 + 진행 소식 스위치(기억), 아래 버튼 줄(이동·고정·큰 사무실) + 입력창, 말풍선 색 띠 제거, macOS vibrancy. UI 8건(시안 구성·스위치 기억·Enter·메뉴 키보드·터미널 없음·기다림이면 이동이 주 버튼·개인정보·필터) 2회 반복 통과
+- 시안: https://claude.ai/artifact/VD16PfkCGeVMB1TCYDiawP (D·E·F)
+- UI(`tests/ui/card.spec.ts`, 브라우저에서 데스크톱 브리지로 `#card`를 연다): 머리줄 한 줄·지금 카드/아래 버튼 줄 없음·작업 정보 기본 접힘·탭 3개(대화 기본)·입력창이 카드 맨 아래 / Enter 보내기·Shift+Enter 줄바꿈 / 카드 메뉴의 인수인계·이동·꾸미기·이름 바꾸기, Esc는 메뉴만 닫음, 인수인계 대화상자 열림 / 터미널이 없으면 이유 안내
+- 큰 사무실 패널은 그대로(기존 ux·paging·office·usage-life·i18n 통과). `Inspector`는 조각으로 나눠 패널과 카드가 순서만 달리 조립
+- 단위: `readCardSize`(정상·이상한 값), 기억한 크기로 열림
+- desktop: 카드 창이 크기 조절되고, 바꾼 크기(560)로 다시 열림. 기억 메모 키보드 입력 유지
+- 화면 확인: `.local/card-chat-folded.png`, `.local/card-chat.png`
+- 리뷰 반영
+  - Codex: 필터를 접으면 필터한 대화가 자동 스크롤되지 않음 → 고침
+  - 독립 리뷰
+    - '나를 기다려요' 칩을 누르면 터미널로 이동한다(입력창이 받을 수 없는 권한 확인 등)
+    - '새 소식 n · 읽음으로 표시' 이름
+    - 카드 최소 높이를 창 최소(480)에 맞춤(덜 맞추면 창이 아래로 자라 책상을 덮음)
+    - 크기는 바꾼 축만 저장
+    - 머리줄 두 번 클릭으로 최대화 막음
+    - 메뉴 키보드(첫 항목 포커스·화살표·Home/End·Tab·Esc 후 버튼으로 복귀)
+    - 접기 화살표
+    - 개인정보 모드에서 페르소나 선택 유지
+    - 좁은 크기에서 상태 한 줄·작업 정보 높이 제한·입력 안내 한 줄
+  - UI: 칩 2개 동작, 개인정보, 필터 접기, 메뉴 키보드와 두 번째 Esc는 카드 닫기 요청(실제 기록 확인). 2회 반복 통과
+
+# 스크롤 깜박임 + 펼친 말풍선 자동 접기 · 2026-10-12 (Issue #85)
+- 스크롤: 데모(여러 창 폭)로는 재현되지 않았다. 원인 후보를 구조적으로 막았다
+  - 화면 맞춤에서는 `.scene-viewport`가 스크롤하지 않음(`is-fit` → overflow hidden, scene-size 100%)
+  - 측정은 스크롤바 영향 없는 부모(`.office-card`)를 정수로, 같으면 갱신 없음
+  - UI(`office.spec.ts`): 맞춤에서 overflow hidden이고 30프레임 동안 scale·client 크기 불변, 확대하면 auto, 다시 맞춤이면 hidden
+- 말풍선: UI(`helpers-peek.spec.ts`) 큰 사무실에서 안쪽 클릭은 유지·바깥 클릭과 창 blur는 접힘, 책상 줄에서 답장 칸을 눌러도 펼친 채 유지
+- 리뷰 반영
+  - 책상 줄에서 하나를 펼친 채 다른 말풍선 글자를 누르면 첫 클릭이 사라졌다. 접기로 줄이 다시 그려지면서 `InlineMarkdown`이 렌더마다 새 컴포넌트로 글자를 갈아 끼웠기 때문 → 컴포넌트를 모듈 상수로(UI, 수정 전 실패 확인)
+  - 확대 모드에서 카드 바깥 크기로 재서 양 축이 스크롤바 폭만큼 넘쳤다 → 내용 크기 + min 100%. 스크롤바를 보이게 한 별도 파일 `office-scroll.spec.ts`(headless는 스크롤바가 자리를 차지하지 않아 원래 버그를 못 잡음, 수정 전 실패 확인)
+  - 다른 책상의 답장 칸은 안쪽으로 보지 않음(Codex)
+  - 펫도 바깥 클릭·blur에 접힘(UI)
+- 전체: 단위 294, 화면 통과(실제 수집기 1개 제외), desktop 통과
+
+# 한도 소진 시 책상 소등 · 2026-10-08 (Issue #29)
+- 단위(`tests/quota-lights.test.ts`): 범위(계정 전체·모델 한정, 모델 모르면 미적용, 다른 도구 무관), 99.9%·실패·미지원·미수집·오래된 조회는 소진 아님, 재설정 시각 지나면 회복, 여러 창이면 마지막 재설정에 회복, 재설정 모름, 일하는/부르는/오류 책상은 안 어두워짐, 모델이 조회를 실음
+- UI(`tests/ui/quota-lights.spec.ts`): 큰 사무실 소등(모니터·그늘)·배지 툴팁(마우스·키보드)·눌러도 카드 안 열림·일하는/부르는 책상은 배지만·Codex 책상 무관 / 가짜 시계로 재설정 지나면 다시 켜짐 / 조회 실패는 소등 아님 / 개인정보 모드는 조회 0회 / 책상 줄·바닥·펫 배지 `data-solid`. 3회 반복 통과
+- 화면 확인: 큰 사무실·책상 줄·바닥 책상·펫 툴팁 스크린샷
+- 독립 리뷰 반영: #75 뒤 라이트 테마에서 설명이 검은 배경에 어두운 글자라 안 읽혔다 → 테마와 상관없는 고정 색(UI 라이트 테마 테스트). 이웃 구역 말풍선이 설명을 덮었다 → 그 구역을 올림. 설명 위로 커서를 옮기면 사라졌다 → 다리 + 표시 중 pointer-events. Esc로 닫힘. 도구 하나만 실패해도 15분이 되던 것 → 읽힌 도구가 없을 때만(UI). Codex 다른 limit ID는 내부 이름이라 적용 보류(단위). 3회 반복 통과
+- Codex 리뷰 반영(UI): 조회가 실패하면 받아 둔 값을 비워 다시 켜짐, 실패 뒤 15분 안에는 창을 다시 보여도 읽지 않음(가짜 시계·visibilitychange, 수정 전 코드에서 실패 확인). 데모를 나가는 순간 남은 데모 설정으로 읽지 않도록 서비스가 준 snapshot일 때만 개인정보 설정을 믿는다
+
+# 순정 맥(Sonoma) 네이티브 UI · 2026-10-09 (Issue #73)
+- 셸: 상단 바·아이콘 레일·하단 상태 줄을 macOS 소스 목록 사이드바 + 열마다 통합 툴바로 교체. 공간 전환은 툴바 세그먼트(포털), 사이드바가 현재 공간을 비춘다
+- 토큰: 라이트 기본, 시스템 다크 자동. 기존 토큰 이름 유지로 크롬 전체가 따라옴. 장면 픽셀 아트 색은 그대로
+- 단위 291 통과. UI 102 통과(신규 `tests/ui/native.spec.ts` 9개: 사이드바 공간·기록 전환과 현재 공간 표시, 할 일 항목 → 첫 동료, 프로젝트 필터 시 좌표 불변, 툴바 슬롯, 시스템 라이트/다크, 다른 화면에서 고른 프로젝트, 저장된 공간의 첫 표시, 가리기 시 검색어 비우기, 페이지 안 대화상자가 창 전체를 덮음)
+- 기존 테스트 조정 4건(의미 유지): 하단 바 제거로 방 하단 기준을 창 높이(970)로, 같은 이름의 사이드바 항목과 구분하려 요약 타일을 `.stats-grid`로 한정, 방이 100%보다 크게 그려질 때 1px 낭독 전용 상자의 배율 반영, 검색 버튼에 접근 이름 부여(글자가 숨겨져도 이름 유지)
+- typecheck·format·build, Electron smoke(펫·줄·바닥·IPC·격리·첫 실행 안내·Dock 아이콘) 통과. 확인: 1440·1280·1050 폭, 390 폭, 라이트/다크, 가이드·팔레트·소식함·설정·기억 서랍·활동 기록·라운지
+- 독립 리뷰 반영: 컨테이너 쿼리를 툴바로 옮겨 페이지 안 모달이 메인 열에 갇히던 문제(High) 수정, 데스크 펫·책상 줄은 시스템 모양과 관계없이 어두운 HUD 토큰, 사이드바 프로젝트는 창 이벤트 대신 요청 상태로 넘겨 다른 화면에서도 적용·정확한 프로젝트 범위(부분 문자열 아님), 첫 표시 공간을 저장값에서 읽음, 가리기 켜면 검색어 비움, 반투명 사이드바는 macOS 창에서만, 카드 창 머리줄 드래그 해제, 대화상자 no-drag, 병합 PR 색 대비
+- 한계: 실제 macOS 창의 vibrancy 재질은 설정으로만 확인(사용자 화면 캡처는 하지 않음)
+
 # 데모도 시간에 따라 상태를 다시 계산 · 2026-10-08 (Issue #16)
 - 원인: 데모는 상태가 고정이라 2분이 지나면 자세는 '대기'인데 라벨은 '일하는 중'으로 남았다(라이브는 서비스 `decorate`가 계산)
 - 변경: `deriveDemo(snapshot, now)`가 서비스와 같은 `deriveState`로 상태를 계산하고, `useOffice`가 데모일 때 15초 시계마다 적용해 내보낸다. 들고 있는 데모 원본은 관측 상태 그대로
@@ -398,6 +691,15 @@
 | Tailscale 미리보기 | HTTPS 4319 응답 200, 같은 origin의 RPC 및 3종 실제 세션 연결 확인 |
 
 세션 수는 2026-10-04 후속 핵심 UX 검증 관측값이며 실행 중 바뀔 수 있다. OpenClaw는 최근 120개 한도다. 패키지 시작부터 첫 수집 완료까지 이번 측정은 4.6초였다. 이후 변경분을 캐시하고 5초 간격으로 확인한다. 최초 UI에는 저장된 세션이 먼저 표시될 수 있다.
+
+## 조용한 실행 (`AGENT_OFFICE_QUIET=1`)
+
+데스크톱 스모크는 기본으로 조용한 실행이다(`scripts/quiet-smoke.mjs`). 사람이 일하는 옆에서 돌므로 앱 창이 **사람에게 보이거나 방해가 되면 안 된다**. `desktop/quiet.ts` `quietStart`가 한 곳에서 처리한다:
+
+- `browser-window-created`로 앱이 만드는 **모든 창**(큰 사무실·카드·팝업·설정·펫/책상 줄)을 만들자마자 투명(`setOpacity(0)`)·클릭 통과(`setIgnoreMouseEvents(true)`)로 만들고, 앱이 나중에 투명도·마우스 설정을 바꿔도 되돌리지 못하게 막는다. `show()`는 늘 `showInactive()`, `focus()`·`moveTop()`·`app.focus()`는 아무 일도 하지 않는다. macOS에서는 Dock·앱 전환기에도 나오지 않는다.
+- 그 밖은 실제와 같다: 창은 보이는 상태(`isVisible()`)·자리·크기를 갖고, 층(`setAlwaysOnTop`·레벨·모든 Space)도 실제로 바뀐다. 그래서 '맨 위 고정' 같은 층을 `isAlwaysOnTop()`으로 검사할 수 있고, 보이지 않고 클릭이 통과하는 창이라 맨 위에 떠도 사람의 작업을 가리지 않는다.
+- 페이지는 계속 그려지므로 `webContents.capturePage()`와 Playwright 스크린샷이 동작한다(`npm run test:desktop`이 투명도 0과 `capturePage`를 확인한다).
+- 조용한 실행이 검사하지 못하는 것은 OS 포커스(어느 창이 키보드를 가졌는지, `document.hasFocus()`)뿐이다. 그 단계는 화면이 비어 있을 때 `AGENT_OFFICE_FOCUS_TESTS=1`이나 CI에서만 돈다(`npm run test:cards` 전체가 그렇다).
 
 ## 화면 확인
 

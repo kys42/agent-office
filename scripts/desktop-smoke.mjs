@@ -1,8 +1,10 @@
 import { _electron as electron } from 'playwright';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { expect } from '@playwright/test';
+import { appendFile, mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { focusTests, quietEnv, takeFocus } from './quiet-smoke.mjs';
 const temp = await mkdtemp(path.join(os.tmpdir(), 'agent-office-native-'));
 const now = new Date().toISOString();
 const sources = {
@@ -15,6 +17,18 @@ const jsonl = async (file, rows) => {
   await writeFile(file, rows.map((x) => JSON.stringify(x)).join('\n') + '\n');
 };
 await jsonl(path.join(sources.claude, 'projects', 'demo', 'claude.jsonl'), [
+  ...Array.from({ length: 120 }, (_, i) => ({
+    type: i % 2 ? 'assistant' : 'user',
+    sessionId: 'claude-test',
+    timestamp: new Date(Date.parse(now) - (120 - i) * 60_000).toISOString(),
+    cwd: '/tmp/native-test',
+    message: {
+      id: `history-${i}`,
+      role: i % 2 ? 'assistant' : 'user',
+      content: `합성 지난 대화 ${i} · ${'스크롤 위치를 확인합니다. '.repeat(8)}`,
+      ...(i % 2 ? { stop_reason: 'end_turn' } : {}),
+    },
+  })),
   {
     type: 'user',
     sessionId: 'claude-test',
@@ -71,6 +85,7 @@ try {
     ],
     env: {
       ...process.env,
+      ...quietEnv,
       AGENT_OFFICE_DATA_DIR: path.join(temp, 'data'),
       CLAUDE_CONFIG_DIR: sources.claude,
       CODEX_HOME: sources.codex,
@@ -84,8 +99,9 @@ try {
     await page.evaluate(() => localStorage.getItem('office:onboarding:v1:live')),
     'seen',
   );
+  // Quiet runs keep the app out of the Dock on purpose.
   const checkMacDock = async (stage) => {
-    if (process.platform === 'darwin')
+    if (process.platform === 'darwin' && focusTests)
       assert.equal(
         await app.evaluate(({ app }) => app.dock.isVisible()),
         true,
@@ -102,6 +118,183 @@ try {
     s.connectors.map((c) => c.state),
     ['connected', 'connected', 'connected'],
   );
+  // Diagnostics verify the executing bundle, not a claim in release.json. No private data.
+  const health = await page.evaluate(() => window.office.appHealth());
+  assert.deepEqual(
+    Object.keys(health).sort(),
+    ['version', 'platform', 'arch', 'commit', 'builtAt', 'signature', 'teamId'].sort(),
+  );
+  assert.equal(health.platform, process.platform);
+  if (process.env.AGENT_OFFICE_EXECUTABLE && process.platform === 'darwin') {
+    const metadata = JSON.parse(
+      await readFile(
+        path.resolve(process.env.AGENT_OFFICE_EXECUTABLE, '../../Resources/release.json'),
+        'utf8',
+      ),
+    );
+    assert.equal(health.commit, metadata.sourceCommit);
+    assert.equal(health.signature, metadata.signing === 'developer-id' ? 'developer-id' : 'ad-hoc');
+    if (metadata.signing === 'developer-id') assert.equal(health.teamId, metadata.teamId);
+  } else
+    assert.equal(
+      health.signature,
+      process.env.AGENT_OFFICE_EXECUTABLE ? 'unavailable' : 'development',
+    );
+  await assert.rejects(page.evaluate(() => window.office.openPrivacy('https://invalid.example')));
+  // The settings window (#87): opened at a section, shares preferences, stays open on blur.
+  const settingsWindow = (fn) =>
+    app.evaluate(
+      ({ BrowserWindow }, fn) =>
+        new Function('w', `return (${fn})(w)`)(
+          BrowserWindow.getAllWindows().find(
+            (w) => !w.isDestroyed() && w.webContents.getURL().includes('#settings'),
+          ),
+        ),
+      fn.toString(),
+    );
+  const [settings] = await Promise.all([
+    app.waitForEvent('window'),
+    page.evaluate(() => window.office.settings.open('office')),
+  ]);
+  settings.on('pageerror', (e) => errors.push(e.message));
+  const tab = (category) => settings.locator(`[role=tab][data-category="${category}"]`);
+  await settings.waitForSelector('.settings-popup [data-guide-section="office"]');
+  assert.equal(await tab('office').getAttribute('aria-selected'), 'true');
+  await assert.rejects(page.evaluate(() => window.office.settings.open('nope')));
+  // DOM readiness can precede Electron's ready-to-show (especially from a cold DMG copy).
+  // Exercise blur only after the native window has actually been presented.
+  await expect
+    .poll(() => settingsWindow((w) => !!w && w.isVisible()), {
+      message: 'settings is shown before blur',
+      timeout: 15_000,
+    })
+    .toBe(true);
+  await settingsWindow((w) => w.blur());
+  if (focusTests) await page.bringToFront();
+  await settings.waitForTimeout(400);
+  assert.equal(await settingsWindow((w) => !!w && w.isVisible()), true, 'kept open on blur');
+  // Opening again reuses the window at the asked section.
+  await page.evaluate(() => window.office.settings.open('records'));
+  await settings.waitForSelector('[data-guide-section="records"]');
+  assert.equal(await tab('records').getAttribute('aria-selected'), 'true');
+  // A preference saved here reaches the big office through the shared snapshot.
+  await tab('appearance').click();
+  const motion = settings.locator('[data-guide-section="motion"] [role=switch]');
+  await motion.click();
+  await page.waitForSelector('.app.reduce-motion');
+  // The settings window itself follows reduced motion live.
+  await settings.waitForSelector('.settings-window.reduce-motion');
+  await motion.click();
+  await page.waitForSelector('.app:not(.reduce-motion)');
+  await settings.waitForSelector('.settings-window:not(.reduce-motion)');
+  await tab('general').click();
+  // Desktop-only settings live outside the snapshot: a switch flipped in the settings window
+  // reaches the big office through the desktop-settings broadcast.
+  await page.locator('.source-icon.icon-settings').click();
+  await page.locator('.settings-nav [role=tab][data-category="general"]').click();
+  const sendSwitch = (p) => p.locator('[data-guide-section="terminal"] [role=switch]').first();
+  await sendSwitch(page).waitFor();
+  assert.equal(await sendSwitch(page).getAttribute('aria-checked'), 'true');
+  await sendSwitch(settings).click();
+  await page.waitForSelector('[data-guide-section="terminal"] [role=switch][aria-checked=false]');
+  // Turning it back on confirms natively once; already on, it never asks again.
+  await app.evaluate(({ dialog }) => {
+    globalThis.__confirms = 0;
+    globalThis.__showMessageBox = dialog.showMessageBox;
+    dialog.showMessageBox = async () => (globalThis.__confirms++, { response: 0 });
+  });
+  await sendSwitch(settings).click();
+  await page.waitForSelector('[data-guide-section="terminal"] [role=switch][aria-checked=true]');
+  assert.equal(await page.evaluate(() => window.office.terminalSend(true)), true);
+  assert.equal(await app.evaluate(() => globalThis.__confirms), 1, 'no second confirmation');
+  await app.evaluate(({ dialog }) => {
+    dialog.showMessageBox = globalThis.__showMessageBox;
+  });
+  await page.locator('.source-icon.icon-office').click();
+  await page.waitForSelector('.office-pet');
+  await settings.screenshot({ path: '.local/native-settings.png' });
+  await settingsWindow((w) => w.close());
+  // What this platform can launch at all decides whether the launch sheet is offered (#319).
+  {
+    const support = await page.evaluate(() => window.office.launchSupport());
+    assert.equal(support.supported, process.platform !== 'win32');
+    assert.deepEqual(support.opens, process.platform === 'darwin' ? ['orca', 'tmux'] : []);
+  }
+  // The older launch channels are gone (#319): every launch goes through `office:launch`.
+  for (const name of ['tmuxResume', 'tmuxSummon', 'orcaLaunch', 'orcaSummon'])
+    assert.equal(await page.evaluate((n) => typeof window.office[n], name), 'undefined');
+  // A remote office's session is never launched here; `open` takes only a destination that has
+  // a place of its own (tmux, a resume's Orca tab).
+  await assert.rejects(
+    page.evaluate(() =>
+      window.office.launch({
+        intent: {
+          kind: 'new',
+          at: 'remote-office:test:claude:demo',
+          provider: 'claude',
+          name: 'smoke',
+        },
+        destination: 'tmux',
+        action: 'start',
+      }),
+    ),
+  );
+  await assert.rejects(
+    page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id },
+          destination: 'copy',
+          action: 'open',
+        }),
+      s.sessions[0].id,
+    ),
+  );
+  // The launch core (#318): a strict request shape; an agent that cannot start is refused with
+  // its reason at every destination, before anything is probed or asked.
+  await assert.rejects(
+    page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id, cwd: '/etc' },
+          destination: 'tmux',
+          action: 'start',
+        }),
+      s.sessions[0].id,
+    ),
+  );
+  await assert.rejects(
+    page.evaluate(() =>
+      window.office.launch({
+        intent: { kind: 'resume', session: 'remote-office:test:claude:demo' },
+        destination: 'copy',
+        action: 'probe',
+      }),
+    ),
+  );
+  {
+    const openclaw = s.sessions.find((session) => session.provider === 'openclaw');
+    const options = await page.evaluate(
+      (id) => window.office.launchOptions({ kind: 'fork', session: id, name: 'fork' }),
+      openclaw.id,
+    );
+    assert.deepEqual(
+      options.destinations.map((d) => d.id),
+      ['orca', 'tmux', 'terminalApp', 'copy'],
+    );
+    assert.ok(options.destinations.every((d) => !d.probe.available && d.probe.reason));
+    assert.equal(options.default, null);
+    const refused = await page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id },
+          destination: 'copy',
+          action: 'start',
+        }),
+      openclaw.id,
+    );
+    assert.equal(refused.state, 'refused');
+  }
   const firstNotice = s.notices?.[0];
   assert.ok(firstNotice, 'Native collector emits normalized news');
   const read = await page.evaluate(
@@ -133,6 +326,11 @@ try {
   );
   assert.deepEqual(Object.keys(targets).sort(), [...ids, 'codex:missing'].sort());
   assert.equal(targets['codex:missing'], null);
+  assert.equal(
+    await page.evaluate(() => window.office.inspectDraft('claude:claude-test')),
+    null,
+    'read-only draft recovery returns no draft for a synthetic colleague without a live terminal',
+  );
   // The collector re-localizes its own copy with the renderer: switch to English and check, then
   // pin Korean so the rest of the run doesn't depend on the machine's language.
   const english = await page.evaluate(() => window.office.preferences({ locale: 'en' }));
@@ -142,9 +340,65 @@ try {
   const korean = await page.evaluate(() => window.office.preferences({ locale: 'ko' }));
   assert.ok(korean.connectors.every((c) => /[가-힣]/.test(c.message)));
   await page.waitForFunction(() => document.documentElement.lang === 'ko');
+  // OS notifications (#229): a final reply arriving after the setting is on raises one, recorded
+  // (quiet runs never show it), and clicking it opens that colleague in the big office.
+  const notified = () => app.evaluate(() => globalThis.__agentOfficeNotifications.length);
+  assert.equal(await notified(), 0, 'news already there when the app starts never notifies');
+  await page.evaluate(() => {
+    window.office.selected(null);
+    return window.office.preferences({
+      notifications: { finals: true, calls: true, sound: false },
+    });
+  });
+  const later = new Date().toISOString();
+  await appendFile(
+    path.join(sources.claude, 'projects', 'demo', 'claude.jsonl'),
+    [
+      {
+        type: 'user',
+        sessionId: 'claude-test',
+        timestamp: later,
+        cwd: '/tmp/native-test',
+        message: { role: 'user', content: '알림 확인' },
+      },
+      {
+        type: 'assistant',
+        sessionId: 'claude-test',
+        timestamp: later,
+        message: {
+          id: 'm-notify',
+          role: 'assistant',
+          content: [{ type: 'text', text: '**알림** 검증을 마쳤습니다.' }],
+          stop_reason: 'end_turn',
+        },
+      },
+    ]
+      .map((x) => JSON.stringify(x))
+      .join('\n') + '\n',
+  );
+  for (let i = 0; i < 100 && !(await notified()); i++) await page.waitForTimeout(200);
+  const [shown] = await app.evaluate(() =>
+    globalThis.__agentOfficeNotifications.map(({ click, ...n }) => n),
+  );
+  assert.ok(shown, 'a new final reply raises a notification');
+  assert.equal(shown.kind, 'final');
+  assert.equal(shown.sessionId, 'claude:claude-test');
+  assert.equal(shown.body, '알림 검증을 마쳤습니다.');
+  assert.equal(shown.silent, true);
+  await app.evaluate(() => globalThis.__agentOfficeNotifications[0].click());
+  await page.waitForFunction(
+    () => localStorage.getItem('office:last-session') === 'claude:claude-test',
+  );
+  await page.evaluate(() =>
+    window.office.preferences({ notifications: { finals: false, calls: true, sound: false } }),
+  );
   const [dock] = await Promise.all([
     app.waitForEvent('window'),
-    page.getByRole('button', { name: '데스크 펫', exact: true }).click(),
+    // This action hides its source window. Dispatch the button handler without waiting for
+    // a mouse-frame acknowledgement from a hidden Windows renderer; verify the new window.
+    page
+      .getByRole('button', { name: '데스크 펫', exact: true })
+      .evaluate((button) => button.click()),
   ]);
   await dock.waitForSelector('.desk-pet');
   const dockBounds = () =>
@@ -158,7 +412,51 @@ try {
   await dock.waitForTimeout(400); // entrance fade
   await checkMacDock('desk pet');
   await dock.screenshot({ path: '.local/native-pet.png' });
-  await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();
+  /** The dock's one 보기 (view) menu: open it and pick a look or a place to go. */
+  const chooseView = async (name, { dom = false } = {}) => {
+    const button = dock.getByRole('button', { name: '보기 바꾸기', exact: true });
+    // Right after the window changes size a real hover can miss the pet's tools (Windows):
+    // `dom` presses the button itself, as the old side buttons were pressed here.
+    if (dom) await button.evaluate((b) => b.click());
+    else await button.click();
+    const menu = dock.getByRole('menu', { name: '데스크 보기' });
+    await menu.waitFor();
+    const role = /^(데스크 펫|책상 줄|바닥)$/.test(name)
+      ? 'menuitemradio'
+      : name === '쪼꼬미'
+        ? 'menuitemcheckbox'
+        : 'menuitem';
+    await menu.getByRole(role, { name, exact: true }).click();
+    await menu.waitFor({ state: 'detached' });
+  };
+  // The pet's ＋: its window grows up and to the left (the pet keeps its spot), and back.
+  await dock.locator('.dock-pet-anchor').hover();
+  await dock
+    .locator('.dock-pet-tools')
+    .getByRole('button', { name: '동료 부르기', exact: true })
+    .evaluate((b) => b.click());
+  const petPlus = dock.getByRole('dialog', { name: '동료 부르기' });
+  await petPlus.waitFor();
+  for (let i = 0; i < 40 && (await dockBounds()).width === pet.width; i++)
+    await dock.waitForTimeout(50);
+  const petRoomy = await dockBounds();
+  assert.ok(petRoomy.width > pet.width && petRoomy.height > pet.height, 'the pet window grows');
+  assert.equal(petRoomy.x + petRoomy.width, pet.x + pet.width, 'it keeps its right edge');
+  assert.equal(petRoomy.y + petRoomy.height, pet.y + pet.height, 'it keeps its bottom edge');
+  await dock.waitForTimeout(200);
+  await dock.screenshot({ path: '.local/native-pet-plus.png' });
+  await dock.keyboard.press('Escape');
+  await petPlus.waitFor({ state: 'detached' });
+  for (let i = 0; i < 40 && (await dockBounds()).width !== pet.width; i++)
+    await dock.waitForTimeout(50);
+  assert.deepEqual(
+    (({ x, y, width, height }) => ({ x, y, width, height }))(await dockBounds()),
+    (({ x, y, width, height }) => ({ x, y, width, height }))(pet),
+    'the pet window gives the room back',
+  );
+  // The pet's 보기 menu unfolds the desks.
+  await dock.locator('.dock-pet-anchor').hover();
+  await chooseView('책상 줄', { dom: true });
   await dock.waitForSelector('.desk-row [data-station-id]');
   assert.equal(await dock.locator('.desk-row [data-station-id]').count(), 3);
   const row = await dockBounds();
@@ -168,6 +466,136 @@ try {
   await dock.waitForTimeout(400);
   await checkMacDock('desk row');
   await dock.screenshot({ path: '.local/native-row.png' });
+  const rowPill = dock.locator('.dock-pill');
+  const backTo = async (height, what) => {
+    for (let i = 0; i < 40 && (await dockBounds()).height !== height; i++)
+      await dock.waitForTimeout(50);
+    assert.equal((await dockBounds()).height, height, what);
+  };
+  // The pill's ＋: a popover above it, the window grown upward while it is open.
+  await rowPill.getByRole('button', { name: '동료 부르기', exact: true }).click();
+  const plusPop = dock.getByRole('dialog', { name: '동료 부르기' });
+  await plusPop.waitFor();
+  await dock.waitForFunction(
+    () => getComputedStyle(document.querySelector('.dock-plus')).visibility === 'visible',
+  );
+  const roomy = await dockBounds();
+  assert.ok(roomy.height > row.height + 200, 'the row grows upward for ＋');
+  assert.equal(roomy.y + roomy.height, row.y + row.height, 'it keeps its bottom edge');
+  // 새로 부르기 hands over to the launch sheet: its own room takes over, no shrink in between.
+  const project = plusPop.getByRole('button', { name: /에서 새로 부르기$/ }).first();
+  if (await project.count()) {
+    await project.click();
+    const sheet = dock.getByRole('dialog', { name: '세션 시작' });
+    await sheet.waitFor();
+    await dock.waitForTimeout(150);
+    assert.equal((await dockBounds()).height, roomy.height, 'the sheet keeps the room');
+    await dock.screenshot({ path: '.local/native-row-plus-sheet.png' });
+    await dock.keyboard.press('Escape');
+    await sheet.waitFor({ state: 'detached' });
+    await backTo(row.height, 'the room goes back as the sheet closes');
+    await rowPill.getByRole('button', { name: '동료 부르기', exact: true }).click();
+    await plusPop.waitFor();
+  }
+  await plusPop.getByRole('tab', { name: /데려오기/ }).click();
+  await dock.waitForTimeout(150);
+  await dock.screenshot({ path: '.local/native-row-plus.png' });
+  await dock.keyboard.press('Escape');
+  await plusPop.waitFor({ state: 'detached' });
+  await backTo(row.height, 'the room goes back as ＋ closes');
+  // 보기 opens on hover. The window grows under the pointer: the page re-judges hover at the
+  // pointer's old spot (now off the button), yet the menu stays — the pointer never moved.
+  const viewMenu = dock.getByRole('menu', { name: '데스크 보기' });
+  await rowPill.getByRole('button', { name: '보기 바꾸기', exact: true }).hover();
+  await viewMenu.waitFor();
+  for (let i = 0; i < 40 && (await dockBounds()).height === row.height; i++)
+    await dock.waitForTimeout(50);
+  assert.ok((await dockBounds()).height > row.height, 'the row grows for the hover-opened menu');
+  await dock.waitForTimeout(700);
+  assert.ok(await viewMenu.isVisible(), 'a still pointer keeps the hover-opened menu');
+  // Leaving it for the see-through top closes it after a short grace, and gives the room back.
+  await dock.mouse.move(12, 12);
+  await viewMenu.waitFor({ state: 'detached' });
+  await backTo(row.height, 'the room goes back as the hover menu closes');
+  // 👁 잠깐 숨기기: the desks step aside (click-through), the pill stays; then they come back.
+  await rowPill.getByRole('button', { name: '잠깐 숨기기', exact: true }).click();
+  await dock.waitForSelector('.desk-row.is-peeking');
+  await dock.waitForTimeout(300);
+  assert.ok(!(await dock.locator('.desk-row [data-station-id]').first().isVisible()));
+  await dock.screenshot({ path: '.local/native-row-peek.png' });
+  await rowPill.getByRole('button', { name: '다시 보기', exact: true }).click();
+  await dock.waitForSelector('.desk-row:not(.is-peeking) [data-station-id]');
+  // Synthetic providers share one project. Its sign moves their benches together.
+  const rowZone = dock.locator('.row-zone').first();
+  const originalX = await rowZone.evaluate((el) => parseFloat(el.style.left));
+  const sign = await dock.locator('.row-zone-handle').first().boundingBox();
+  assert.ok(sign, 'project sign is drawn');
+  await dock.mouse.move(sign.x + sign.width / 2, sign.y + sign.height / 2);
+  await dock.mouse.down();
+  await dock.mouse.move(sign.x + sign.width / 2 - 100, sign.y + sign.height / 2, { steps: 8 });
+  await dock.mouse.up();
+  await dock.waitForFunction(
+    (before) => parseFloat(document.querySelector('.row-zone').style.left) < before - 80,
+    originalX,
+  );
+  const arrangedX = await rowZone.evaluate((el) => parseFloat(el.style.left));
+  assert.equal(await dock.locator('.row-station').count(), 3, 'all desks move together');
+  assert.ok(await dock.evaluate(() => localStorage.getItem('office:row-zones:v1:live')));
+  await dock.screenshot({ path: '.local/native-row-arranged.png' });
+  // Tiny (쪼꼬미): the main process shrinks the strip, keeps it on the edge and remembers it.
+  const dockFile = path.join(temp, 'data', 'dock.json');
+  // The main process saves after resizing; give the write a moment.
+  const savedTiny = async (tiny) => {
+    for (let i = 0; i < 40; i++) {
+      const raw = await readFile(dockFile, 'utf8').catch(() => '');
+      if (raw && JSON.parse(raw).tiny === tiny) return JSON.parse(raw);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return JSON.parse(await readFile(dockFile, 'utf8'));
+  };
+  await chooseView('쪼꼬미');
+  await dock.waitForSelector('.desk-row.is-tiny');
+  const tiny = await dockBounds();
+  assert.ok(tiny.height < 120 && tiny.height < row.height / 3, 'tiny row is a short strip');
+  assert.equal(tiny.y + tiny.height, tiny.area.y + tiny.area.height, 'tiny rests on the edge');
+  assert.equal(await dock.locator('.speech-bubble').count(), 0, 'tiny has no bubbles');
+  assert.deepEqual(await savedTiny(true), { v: 1, tiny: true });
+  await dock.screenshot({ path: '.local/native-row-tiny.png' });
+  // The tiny pill counts like the pet: a number lists who, above the strip — the window grows
+  // upward for it (room) and gives the room back once it closes.
+  const number = dock.locator('.dock-pill .tally-pill > button').first();
+  if (await number.count()) {
+    await number.focus();
+    await dock.keyboard.press('Enter');
+    const list = dock.locator('.tally-list');
+    await list.waitFor();
+    await dock.waitForFunction(() => {
+      const el = document.querySelector('.tally-list');
+      return !!el && getComputedStyle(el).visibility === 'visible';
+    });
+    const grown = await dockBounds();
+    assert.ok(grown.height > tiny.height + 150, 'the tiny strip grows upward for the list');
+    assert.equal(grown.y + grown.height, tiny.y + tiny.height, 'it keeps its bottom edge');
+    await dock.waitForTimeout(250); // the list's short rise
+    const box = await list.boundingBox();
+    const pillBox = await dock.locator('.dock-pill').boundingBox();
+    assert.ok(box && pillBox && box.y >= 0, 'the whole list is inside the window');
+    assert.ok(
+      box.y + box.height <= pillBox.y + 3,
+      `the list stands above the pill (${JSON.stringify({ box, pillBox })})`,
+    );
+    await dock.screenshot({ path: '.local/native-tiny-tally.png' });
+    await dock.keyboard.press('Escape');
+    await list.waitFor({ state: 'detached' });
+    await dock.waitForFunction(() => document.querySelector('.desk-row.is-tiny'));
+    for (let i = 0; i < 40 && (await dockBounds()).height !== tiny.height; i++)
+      await dock.waitForTimeout(50);
+    assert.equal((await dockBounds()).height, tiny.height, 'the room goes back as the list closes');
+  }
+  await chooseView('쪼꼬미');
+  await dock.waitForFunction(() => !document.querySelector('.desk-row.is-tiny'));
+  assert.equal((await dockBounds()).height, row.height, 'full size comes back');
+  assert.deepEqual(await savedTiny(false), { v: 1, tiny: false });
   // Keep this test's card open if someone uses another app during local QA. Production still
   // closes it on blur; we test its panel focus/keyboard without racing the user's desktop.
   await app.evaluate(({ app }) =>
@@ -180,7 +608,7 @@ try {
     dock.evaluate(() =>
       window.office.card(
         'open',
-        { id: 'codex:codex-test', news: false },
+        { id: 'codex:codex-test' },
         {
           x: 400,
           y: 600,
@@ -191,18 +619,223 @@ try {
     ),
   ]);
   await card.waitForSelector('.inspector');
-  await card.bringToFront();
-  await card.waitForFunction(() => document.hasFocus());
+  await takeFocus(card);
   await checkMacDock('popup work card');
   await card.getByRole('tab', { name: '기억 메모', exact: true }).click();
   const notes = card.locator('#notes');
   await notes.fill('');
   await notes.pressSequentially('Panel keyboard input');
   assert.equal(await notes.inputValue(), 'Panel keyboard input', 'popup panel accepts keyboard');
+  const chat = card.locator('.terminal-send-chat textarea');
+  await chat.pressSequentially('Unsent reply draft');
+  assert.equal(await chat.inputValue(), 'Unsent reply draft', 'popup chat accepts OS keyboard');
+  // The office is hidden while its card is open. Poll from Node: a Windows hidden
+  // renderer may suspend rAF, including waitForFunction's default polling loop.
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem('office:reply-draft:v1:live:codex:codex-test')),
+    )
+    .toBe('Unsent reply draft');
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('office:reply-draft:v1:live:codex:codex-test')),
+    'Unsent reply draft',
+    'draft is stored in the shared native profile immediately',
+  );
+  // A bookmark saved from another renderer arrives in the open memory tab via real IPC.
+  // These are synthetic provider files in this smoke's own profile and DB.
+  const saved = await page.evaluate(async () => {
+    const s = await window.office.detail('codex:codex-test');
+    const e = s.events.find((e) => e.kind === 'user');
+    if (!e) throw new Error('synthetic request missing');
+    return (await window.office.bookmark(s.id, e.id)).bookmark;
+  });
+  await card.waitForSelector('.inspector-bookmarks .bookmark-card');
+  assert.ok((await card.locator('.bookmark-card').innerText()).includes('작은 사무실 만들기'));
+  assert.equal(
+    await notes.inputValue(),
+    'Panel keyboard input',
+    'bookmark refresh preserves notes',
+  );
+  await card
+    .locator('.bookmark-card')
+    .getByRole('button', { name: '메모 추가', exact: true })
+    .click();
+  const annotation = card.locator('.bookmark-note-edit textarea');
+  await annotation.pressSequentially('Remember this decision');
+  await card
+    .locator('.bookmark-note-edit')
+    .getByRole('button', { name: '저장', exact: true })
+    .click();
+  await card.waitForSelector('.bookmark-note');
+  assert.equal(
+    await card.locator('.bookmark-note .message-text').innerText(),
+    'Remember this decision',
+  );
+  // In the app the saved conversation opens in its own window beside the card (#283).
+  const [readerPage] = await Promise.all([
+    app.waitForEvent('window', { predicate: (p) => p.url().endsWith('#reader') }),
+    card.getByRole('button', { name: '저장한 대화 읽기', exact: true }).click(),
+  ]);
+  const reader = readerPage.locator('.bookmark-reader');
+  await reader.waitFor({ timeout: 15000 });
+  assert.equal(await reader.locator('.message-user .message-meta b').innerText(), '나');
+  assert.ok(
+    (await reader.locator('[data-saved="true"]').innerText()).includes('작은 사무실 만들기'),
+  );
+  await Promise.all([
+    readerPage.waitForEvent('close'),
+    readerPage.keyboard.press('Escape').catch(() => {}),
+  ]);
+  assert.equal(await notes.inputValue(), 'Panel keyboard input');
+  const persisted = await page.evaluate(() =>
+    window.office.bookmarks({ sessionIds: ['codex:codex-test'] }),
+  );
+  assert.equal(persisted.bookmarks.find((b) => b.id === saved.id)?.note, 'Remember this decision');
+  await takeFocus(card);
+  await card.screenshot({ path: '.local/native-card-memory.png' });
+  // The card can be resized, and opens at the size it was given from then on.
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().endsWith('#card'));
+    if (!w.isResizable()) throw new Error('the card is not resizable');
+    w.setSize(560, 600);
+    w.emit('resized');
+  });
+  await card.waitForTimeout(300);
+  await card.evaluate(() => window.office.card('close'));
+  await dock.evaluate(() =>
+    window.office.card(
+      'open',
+      { id: 'codex:codex-test' },
+      { x: 400, y: 600, width: 200, height: 100 },
+    ),
+  );
+  await card.waitForSelector('.inspector-card');
+  const [reopenedWidth] = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((x) => x.webContents.getURL().endsWith('#card'))
+      .getSize(),
+  );
+  assert.equal(reopenedWidth, 560, 'the card reopens at the size the person gave it');
+  assert.equal(
+    await chat.inputValue(),
+    'Unsent reply draft',
+    'closing the native popup keeps its draft',
+  );
+  await card.screenshot({ path: '.local/native-card-reply-draft.png' });
+  // Its header moves it from the main process (no CSS drag region in the card).
+  await card.evaluate(() => window.office.card('drag-start'));
+  await card.evaluate(() => window.office.card('drag-end'));
+  // The same desk clicked again puts its card away (a toggle); clicked once more, it is back.
+  const cardShown = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .isVisible(),
+    );
+  const again = () =>
+    dock.evaluate(() =>
+      window.office.card(
+        'open',
+        { id: 'codex:codex-test' },
+        { x: 400, y: 600, width: 200, height: 100 },
+      ),
+    );
+  await again();
+  assert.equal(await cardShown(), false, 'a second click on the same desk closes its card');
+  await again();
+  await card.waitForSelector('.inspector-card');
+  assert.equal(await cardShown(), true, 'and a third opens it again');
+  // Moved on inside the card to another colleague, the first one's desk opens it rather than closing.
+  await dock.evaluate(() =>
+    window.office.card(
+      'open',
+      { id: 'claude:claude-test' },
+      { x: 400, y: 600, width: 200, height: 100 },
+    ),
+  );
+  await card.evaluate(() => window.office.card('select', { id: 'claude:claude-test' }));
+  await takeFocus(card);
+  await card.waitForFunction(() => document.querySelectorAll('.conversation-message').length >= 24);
+  const scroll = card.locator('.inspector-scroll');
+  await scroll.hover();
+  await card.mouse.wheel(0, -260);
+  await card.waitForFunction(() => {
+    const el = document.querySelector('.inspector-scroll');
+    return el.scrollHeight - el.scrollTop - el.clientHeight > 200;
+  });
+  // Actual collector/IPC pages, reached by scrolling alone, including their end marker.
+  for (let i = 0; i < 10 && (await card.locator('.older-messages').count()); i++) {
+    await card.mouse.wheel(0, -10000);
+    await card.waitForTimeout(900);
+  }
+  assert.equal(
+    await card.locator('.older-messages').count(),
+    0,
+    'native scrolling reaches the oldest page',
+  );
+  assert.ok(
+    (await card.locator('.conversation-message').first().innerText()).includes('합성 지난 대화 0'),
+  );
+  await card.screenshot({ path: '.local/native-card-conversation-scroll.png' });
+  await again();
+  assert.equal(await cardShown(), true, 'a desk other than the one shown switches the card');
+  // Kept open, a click elsewhere (the card losing focus) leaves it up; let go, it closes again.
+  const blurCard = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .emit('blur'),
+    );
+  // A press on its text box gives the card the keyboard again, after another window had it.
+  if (focusTests) {
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().includes('#mini'))
+        ?.focus(),
+    );
+    await card.evaluate(() => window.office.card('focus'));
+    assert.equal(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getFocusedWindow()?.webContents.getURL().endsWith('#card'),
+      ),
+      true,
+      'the card holds the keyboard after asking for it',
+    );
+  }
+  await card.evaluate(() => window.office.card('pin-on'));
+  await card.waitForTimeout(700);
+  await blurCard();
+  await card.waitForTimeout(900);
+  assert.equal(await cardShown(), true, 'a kept-open card stays when focus goes elsewhere');
+  const cardOnTop = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .isAlwaysOnTop(),
+    );
+  assert.equal(await cardOnTop(), false, 'a plain pinned card is an ordinary window');
+  // The pin's third state: still kept open, now always on top (a quiet run's windows are
+  // invisible and click-through, so it floats for real there too).
+  await card.evaluate(() => window.office.card('pin-top'));
+  const topState = await card.evaluate(() => window.office.cardState());
+  assert.deepEqual([topState.pin, topState.pinned], ['top', true]);
+  await blurCard();
+  await card.waitForTimeout(900);
+  assert.equal(await cardShown(), true, 'a card pinned on top stays when focus goes elsewhere');
+  assert.equal(await cardOnTop(), true, 'pinned on top floats');
+  await card.evaluate(() => window.office.card('pin-off'));
+  assert.equal((await card.evaluate(() => window.office.cardState())).pin, 'off');
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
-  await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
+  await chooseView('바닥');
   await dock.waitForSelector('.desk-row.desk-floor');
+  await dock.waitForFunction(
+    (expected) =>
+      Math.abs(parseFloat(document.querySelector('.row-zone').style.left) - expected) < 1,
+    arrangedX,
+  );
+  await dock.getByRole('button', { name: '기본 배치로 되돌리기', exact: true }).click();
+  await dock.waitForFunction(() => !localStorage.getItem('office:row-zones:v1:live'));
   const floor = await dockBounds();
   assert.equal(floor.width, floor.area.width, 'floor desks span the work area');
   assert.equal(floor.y + floor.height, floor.area.y + floor.area.height, 'standing on the bottom');
@@ -210,23 +843,52 @@ try {
   await dock.waitForTimeout(400);
   await checkMacDock('floor desks');
   await dock.screenshot({ path: '.local/native-floor.png' });
-  await dock.getByRole('button', { name: '책상 줄 접기' }).click();
+  await chooseView('데스크 펫');
   await dock.waitForSelector('.desk-pet');
   const back = await dockBounds();
   assert.deepEqual([back.x, back.y, back.width], [pet.x, pet.y, pet.width], 'pet returns home');
   // The pet's tools appear (and take clicks) only while the pet is pointed at.
   await dock.locator('.dock-pet-anchor').hover();
-  await dock.getByRole('button', { name: '사무실 펼치기' }).click();
+  await chooseView('큰 사무실 열기', { dom: true });
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .filter((w) => w.isVisible())
+          .map((w) => w.webContents.getURL().split('#')[1] ?? 'office'),
+      ),
+    )
+    .toEqual(['office']);
   await checkMacDock('return to main office');
   const native = await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows().map((w) => ({
       transparent: w.getBackgroundColor(),
       alwaysOnTop: w.isAlwaysOnTop(),
       visible: w.isVisible(),
+      opacity: w.getOpacity(),
       webPreferences: w.webContents.getLastWebPreferences(),
     })),
   );
   assert.ok(native.some((w) => w.alwaysOnTop && !w.visible));
+  if (!focusTests) {
+    // Quiet runs: every window is invisible to the person (desktop/quiet.ts), yet still renders.
+    // Linux has no window opacity; there quiet windows only never float (their layer is recorded).
+    assert.ok(
+      process.platform === 'linux' || native.every((w) => w.opacity === 0),
+      'quiet windows are fully transparent',
+    );
+    const captured = await app.evaluate(async ({ BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows().find((x) => x.isVisible());
+      const image = await w.webContents.capturePage();
+      const { width, height } = image.getSize();
+      // Any pixel that is not fully transparent: the page was drawn.
+      const bitmap = image.toBitmap();
+      let drawn = false;
+      for (let i = 3; i < bitmap.length && !drawn; i += 4) drawn = bitmap[i] > 0;
+      return { width, height, drawn };
+    });
+    assert.ok(captured.width > 0 && captured.height > 0 && captured.drawn, 'capturePage works');
+  }
   assert.equal(native.filter((w) => w.visible).length, 1);
   assert.ok(
     native.every(
@@ -248,9 +910,29 @@ try {
       ipcPersistence: true,
       rendererIsolation: true,
       firstRunGuide: true,
-      macDockIcon: process.platform === 'darwin',
+      installationIdentity: health,
+      settingsWindow: true,
+      notifications: true,
+      macDockIcon:
+        process.platform !== 'darwin' ? 'not-applicable' : focusTests ? 'passed' : 'skipped',
     }),
   );
+} catch (error) {
+  if (app) {
+    for (const [i, window] of app.windows().entries()) {
+      console.error(
+        JSON.stringify({
+          url: window.url(),
+          buttons: await window
+            .locator('button[aria-label]')
+            .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('aria-label')))
+            .catch(() => []),
+        }),
+      );
+      await window.screenshot({ path: `.local/native-failure-${i}.png` }).catch(() => {});
+    }
+  }
+  throw error;
 } finally {
   if (app) await app.close();
   await rm(temp, { recursive: true, force: true });

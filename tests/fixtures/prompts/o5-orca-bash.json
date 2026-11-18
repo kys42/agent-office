@@ -1,0 +1,42 @@
+{
+ "id": "00000000-0000-0000-0000-000000000000",
+ "ok": true,
+ "result": {
+  "terminal": {
+   "handle": "term_00000000-0000-0000-0000-000000000000",
+   "status": "running",
+   "tail": [
+    " ▐▛███▛█   Claude Code v2.1.296",
+    "▝▜██████▀  Opus 5.5 with medium effort · Claude Team",
+    " ▝▝   ▝▝   /…/ec84eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure/proj-e",
+    "❯ Run exactly this with Bash: echo hi > hello3.txt",
+    "⏺ Hello3.txt에 hi 쓰기",
+    "  ⎿  $ echo hi > hello3.txt",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    " Bash command",
+    " Tip: auto mode handles these prompts for you — choose \"switch to auto mode\" below",
+    " hello3.txt에 hi 쓰기",
+    "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌",
+    " echo hi > hello3.txt",
+    "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌",
+    " Do you want to proceed?",
+    " ❯ 1. Yes",
+    "   2. Yes, and always allow access to /private/tmp/claude-501/-Users-someone-xyz-orca-workspaces-agent-office-global/ec8",
+    "      4eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure/proj-e from this project",
+    "   3. Yes, and switch to auto mode · auto mode handles these prompts for you",
+    "   4. No",
+    " Esc to cancel · Tab to amend"
+   ],
+   "truncated": false,
+   "limited": false,
+   "oldestCursor": "0",
+   "nextCursor": "1",
+   "latestCursor": "1",
+   "returnedLineCount": 20,
+   "source": "screen"
+  }
+ },
+ "_meta": {
+  "runtimeId": "048399f6-c6f8-442e-966f-3c529faf487c"
+ }
+}

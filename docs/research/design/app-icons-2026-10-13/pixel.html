@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Office · 로봇+맥북 도트 시안</title>
+<style>
+:root{color-scheme:light;--bg:#f5f5f7;--card:#fff;--ink:#202026;--muted:#65656c;--line:#dedee4;--dock:#e8e8ed}
+:root[data-theme=dark]{color-scheme:dark;--bg:#17191e;--card:#23262c;--ink:#f5f5f7;--muted:#bbbcc4;--line:#3a3e47;--dock:#14161b}
+*{box-sizing:border-box}body{margin:0;padding:36px 24px;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink)}
+main{max-width:1080px;margin:auto}header{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:24px}h1{font-size:25px;letter-spacing:-.03em;margin:0 0 8px}p{margin:0;color:var(--muted);line-height:1.6;font-size:14px}
+button{font:inherit;border:1px solid var(--line);border-radius:10px;padding:9px 14px;background:var(--card);color:var(--ink);cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}article{background:var(--card);padding:18px;border:1px solid var(--line);border-radius:20px;min-width:0}
+.hero{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:contain}.pixel .hero{image-rendering:pixelated}h2{font-size:17px;margin:14px 0 5px}
+.sizes{margin-top:18px;padding:16px 8px;background:var(--dock);border-radius:12px;display:flex;gap:24px;align-items:end;justify-content:center}.sample{display:flex;flex-direction:column;align-items:center;gap:8px}.sample small{color:var(--muted);font-size:11px}
+a{color:inherit}footer{margin-top:24px}button:focus-visible,a:focus-visible{outline:3px solid #88afe7;outline-offset:3px}
+@media(max-width:740px){.grid{grid-template-columns:1fr}article{max-width:450px;margin:auto;width:100%}header{align-items:start;flex-direction:column}}
+</style>
+<main><header><div><h1>로봇 + 맥북 · 도트 시안</h1><p>현재 아이콘과 도트 버전을 큰 그림·32·64px 크기로 비교해보세요.</p></div><div><button onclick="document.documentElement.dataset.theme='light'">밝게</button> <button onclick="document.documentElement.dataset.theme='dark'">어둡게</button></div></header>
+<div class="grid">
+<article><a href="05-mini-robot-macbook.png"><img class="hero" src="05-mini-robot-macbook.png" alt="현재 로봇 맥북 아이콘"></a><h2>현재 · 입체 버전</h2><p>지금 적용한 로봇과 맥북.</p><div class="sizes"><div class="sample"><img src="05-mini-robot-macbook.png" width="32" height="32" alt=""><small>32px</small></div><div class="sample"><img src="05-mini-robot-macbook.png" width="64" height="64" alt=""><small>64px</small></div></div></article>
+<article class="pixel"><a href="06-robot-macbook-pixel-chunky.png"><img class="hero" src="06-robot-macbook-pixel-chunky.png" alt="또렷한 도트 로봇 맥북 시안"></a><h2>A · 또렷한 도트</h2><p>큰 픽셀과 진한 외곽선.</p><div class="sizes"><div class="sample"><img src="06-robot-macbook-pixel-chunky.png" width="32" height="32" alt=""><small>32px</small></div><div class="sample"><img src="06-robot-macbook-pixel-chunky.png" width="64" height="64" alt=""><small>64px</small></div></div><p style="margin-top:14px"><a href="06-robot-macbook-pixel-chunky.prompt.md">생성 프롬프트</a></p></article>
+<article class="pixel"><a href="07-robot-macbook-pixel-soft.png"><img class="hero" src="07-robot-macbook-pixel-soft.png" alt="부드러운 도트 로봇 맥북 시안"></a><h2>B · 부드러운 도트</h2><p>차분한 색과 조금 더 촘촘한 픽셀.</p><div class="sizes"><div class="sample"><img src="07-robot-macbook-pixel-soft.png" width="32" height="32" alt=""><small>32px</small></div><div class="sample"><img src="07-robot-macbook-pixel-soft.png" width="64" height="64" alt=""><small>64px</small></div></div><p style="margin-top:14px"><a href="07-robot-macbook-pixel-soft.prompt.md">생성 프롬프트</a></p></article>
+</div><footer><p>내장 image_gen으로 만든 도트 시안. <a href="index.html">기존 아이콘 시안 전체 보기</a></p></footer></main>
+</html>

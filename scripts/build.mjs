@@ -5,6 +5,7 @@ await build({
     preload: 'desktop/preload.ts',
     worker: 'server/worker.ts',
     mcp: 'server/mcp.ts',
+    'office-peer': 'server/federation/cli.ts',
   },
   outdir: 'dist-desktop',
   outExtension: { '.js': '.cjs' },
@@ -12,6 +13,7 @@ await build({
   platform: 'node',
   target: 'node24',
   format: 'cjs',
-  external: ['electron'],
+  // node-pty is native: loaded from node_modules (unpacked from the asar in the app).
+  external: ['electron', 'node-pty'],
   sourcemap: true,
 });

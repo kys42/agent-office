@@ -19,87 +19,82 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 14px 14px;
+  padding: 14px;
 }
 .stage-toolbar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 38px;
+  gap: 10px;
+  min-width: 0;
 }
+/* Zone switcher = NSSegmentedControl in the window toolbar. */
 .zone-tabs {
   display: inline-flex;
-  padding: 3px;
-  gap: 2px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: 11px;
+  padding: 2px;
+  background: var(--bg-4);
+  border-radius: 7px;
 }
 .zone-tabs button {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 10px 0 11px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 540;
-  color: var(--text-3);
+  gap: 5px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
   white-space: nowrap;
-  transition:
-    color 0.15s,
-    background 0.15s;
 }
-.zone-tabs button:hover {
+.zone-tabs button + button::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 0.5px;
+  background: var(--line-3);
+}
+.zone-tabs button.active::before,
+.zone-tabs button.active + button::before {
+  opacity: 0;
+}
+.zone-tabs button svg {
   color: var(--text-2);
 }
 .zone-tabs button > span {
-  min-width: 20px;
-  padding: 0 5px;
-  border-radius: 5px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 18px;
-  color: var(--text-4);
-  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 .zone-tabs button.active {
-  color: var(--text);
-  background: var(--bg-4);
+  background: var(--control);
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 0 0 0.5px var(--control-line),
+    0 1px 2px rgba(0, 0, 0, 0.12);
 }
 .zone-tabs button.active svg {
   color: var(--accent);
 }
-.zone-tabs button.active > span {
-  color: var(--text-2);
-  background: rgba(255, 255, 255, 0.07);
-}
 .stage-toolbar-end {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
 }
 .live-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 9px 0 8px;
-  border-radius: 99px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--st-work);
-  background: rgba(95, 214, 155, 0.08);
-  border: 1px solid rgba(95, 214, 155, 0.2);
+  background: color-mix(in srgb, var(--st-work) 11%, transparent);
 }
 .live-badge i {
   width: 6px;
@@ -117,14 +112,12 @@
   animation: ping-out 2s ease-out infinite;
 }
 .live-badge.demo {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
+  color: var(--st-error);
+  background: color-mix(in srgb, var(--st-error) 12%, transparent);
 }
 .live-badge.paused {
   color: var(--st-error);
-  background: rgba(246, 178, 79, 0.08);
-  border-color: rgba(246, 178, 79, 0.25);
+  background: color-mix(in srgb, var(--st-error) 12%, transparent);
 }
 /* A demo or paused office is not live: no pulse (it lives on the dot's ::after). */
 .live-badge:is(.demo, .paused) i::after {
@@ -132,22 +125,19 @@
   opacity: 0;
 }
 .office-policy {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
   height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 11.5px;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all 0.15s;
+  border-radius: 6px;
+  color: var(--text-2);
+}
+.office-policy .policy-text {
+  display: none;
 }
 .office-policy:hover {
   color: var(--text);
-  background: var(--bg-3);
+  background: var(--bg-4);
 }
 
 /* ───────────────────────── Stage ───────────────────────── */
@@ -155,12 +145,10 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(65% 55% at 50% 46%, rgba(244, 184, 108, 0.07), transparent 70%),
-    radial-gradient(120% 100% at 50% 40%, #19181c 0%, #111114 55%, #0b0b0e 100%);
+  background: var(--scene-backdrop);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
   isolation: isolate;
 }
 .office-card.dynamic-office::before {
@@ -168,20 +156,21 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1.2px);
-  background-size: 20px 20px;
-  mask-image: radial-gradient(90% 80% at 50% 50%, transparent 30%, #000 85%);
+  background-image: radial-gradient(var(--scene-dots) 1px, transparent 1.2px);
+  background-size: 18px 18px;
   pointer-events: none;
 }
 .office-card.phase-night {
-  background:
-    radial-gradient(65% 55% at 50% 46%, rgba(255, 196, 120, 0.06), transparent 70%),
-    radial-gradient(120% 100% at 50% 40%, #151826 0%, #0f1119 55%, #0a0b10 100%);
+  background: color-mix(in srgb, var(--scene-backdrop) 92%, #20264a);
 }
 .scene-viewport {
   position: absolute;
   inset: 0;
   overflow: auto;
+}
+/* Fitted to the window, the room never scrolls: no scrollbar can come and go. */
+.scene-viewport.is-fit {
+  overflow: hidden;
 }
 .scene-size {
   position: relative;
@@ -553,6 +542,11 @@
 .project-area:has(.speech-request-bubble, .speech-bubble.is-expanded) {
   z-index: 2;
 }
+/* An open reply (and the question about the prompt under it) stays above every other area,
+   including one lifted by its request or unfolded bubble. */
+.project-area:has(.quick-reply) {
+  z-index: 4;
+}
 .phase-night .project-area {
   background:
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px),
@@ -575,7 +569,7 @@
   pointer-events: none;
   z-index: 1;
 }
-.project-floor-mark > span {
+:is(.project-floor-mark, .zone-mark-focus) > span {
   display: grid;
   place-items: center;
   width: 17px;
@@ -587,7 +581,7 @@
   font-family: 'Galmuri9', var(--font-pixel);
   font-size: 9px;
 }
-.project-floor-mark b {
+:is(.project-floor-mark, .zone-mark-focus) > b {
   font-family: var(--font-pixel);
   font-size: 11px;
   font-weight: 700;
@@ -595,11 +589,50 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.project-floor-mark small {
+:is(.project-floor-mark, .zone-mark-focus) > small {
   flex-shrink: 0;
   font-family: 'Galmuri9', var(--font-pixel);
   font-size: 9px;
   color: #bca788;
+}
+
+/* The big office's zone sign is a button: it zooms the room onto its zone (again: all). */
+.project-area > .project-floor-mark {
+  pointer-events: auto;
+}
+.zone-mark-focus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  cursor: zoom-in;
+}
+.project-area.is-focus-zone .zone-mark-focus {
+  cursor: zoom-out;
+}
+.zone-mark-focus:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.project-floor-mark:has(.zone-mark-focus:hover) {
+  background: rgba(52, 38, 30, 0.96);
+}
+/* Zoomed onto one zone: the rest of the room steps back. */
+.project-area {
+  transition:
+    opacity 0.2s,
+    filter 0.2s;
+}
+.office-card.is-zone-focus .project-area:not(.is-focus-zone) {
+  opacity: 0.32;
+  filter: saturate(0.5);
 }
 
 /* Desks (bench furniture) */
@@ -613,17 +646,17 @@
   position: absolute;
   inset: 0;
   border-radius: 3px 3px 0 0;
-  border-top: 3px solid #ffe2ab;
-  border-left: 3px solid #6e4a3a;
-  border-right: 3px solid #6e4a3a;
+  border-top: 3px solid var(--asset-rim, #ffe2ab);
+  border-left: 3px solid var(--asset-side, #6e4a3a);
+  border-right: 3px solid var(--asset-side, #6e4a3a);
   box-shadow: 0 6px 0 rgba(50, 30, 20, 0.22);
 }
-.dynamic-office .team-bench .bench-surface {
+:is(.dynamic-office, .desk-preview-scene) .team-bench .bench-surface {
   background: linear-gradient(
     var(--asset-top) 0 5px,
     var(--asset-wood) 5px 29px,
     var(--asset-edge) 29px 35px,
-    #6e4a3a 35px 40px,
+    var(--asset-side, #6e4a3a) 35px 40px,
     transparent 40px
   );
 }
@@ -634,7 +667,7 @@
   top: 37px;
   width: 8px;
   height: 14px;
-  background: #5e3f33;
+  background: var(--asset-leg, #5e3f33);
   border-bottom: 3px solid #3a2722;
 }
 .bench-surface::before {
@@ -661,7 +694,7 @@
 .desk-station.selected-station {
   z-index: 5;
 }
-.desk-station:has(.speech-bubble:hover) {
+.desk-station:has(.speech-bubble:is(:hover, :focus-within)) {
   z-index: 6;
 }
 .desk-glow {
@@ -725,6 +758,17 @@
   background: #3e4842;
   border-left: 4px solid #2c3530;
   border-right: 4px solid #2c3530;
+}
+/* A customized chair (desks.ts): one drawn layer in its box, set inline. */
+.office-chair.is-sprite {
+  background: center / 100% 100% no-repeat;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  image-rendering: pixelated;
+}
+.office-chair.is-sprite::after {
+  content: none;
 }
 .pet-shadow {
   position: absolute;
@@ -886,6 +930,12 @@
 .status-done .desk-screen {
   background: linear-gradient(135deg, #d6e9ff, #8fbff6);
 }
+.desk-monitor,
+.desk-item {
+  position: absolute;
+  background: center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+}
 .desk-keyboard {
   position: absolute;
   top: 149px;
@@ -922,6 +972,8 @@
   top: 70px;
   left: 112px;
   z-index: 4;
+  /* A status sign, not a control: hovering or clicking reaches the desk beneath. */
+  pointer-events: none;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -941,13 +993,16 @@
   width: 2px;
   height: 8px;
   background: #8ff0bd;
+}
+/* One loop per desk: the first bar moves, the other two hold the meter's shape. */
+.working-beacon i:first-child {
   animation: work-meter 0.75s steps(3) infinite alternate;
 }
 .working-beacon i:nth-child(2) {
-  animation-delay: -0.375s;
+  transform: scaleY(0.68);
 }
 .working-beacon i:nth-child(3) {
-  animation-delay: -0.75s;
+  transform: scaleY(0.35);
   margin-right: 3px;
 }
 @keyframes work-meter {
@@ -1057,6 +1112,16 @@
   border-radius: 3px;
   color: #2a1a06;
   background: var(--accent);
+}
+/* An agent-team member at a desk of its own (its lead is not in the office). */
+.desk-name small .desk-teammate {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px solid rgba(184, 168, 148, 0.55);
+  border-radius: 3px;
+  font-weight: 400;
+  line-height: 1.3;
 }
 .desk-name.selected {
   background: #ffd37f;
@@ -1185,19 +1250,18 @@
 .bubble-new.unread .bubble-exposure {
   color: #b02a44;
 }
-.speech-copy b {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.speech-text {
+  display: block;
+  max-height: calc(var(--speech-lines, 2) * 1lh);
   overflow: hidden;
-  font-size: 11px;
+  font-size: calc(11px * var(--bubble-scale));
   font-weight: 600;
   line-height: 1.36;
   letter-spacing: -0.01em;
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
-.speech-bubble.unread::before {
+.speech-bubble.unread.bubble-new:not(.is-expanded):not(.is-peek)::before {
   content: '';
   position: absolute;
   left: -5px;
@@ -1243,21 +1307,62 @@
   background: #2a2128;
   box-shadow: 0 0 0 2px #fffaf1;
   opacity: 0;
+  pointer-events: none;
   transform: scale(0.8);
   transition:
     opacity 0.15s,
     transform 0.15s;
 }
-.speech-bubble:hover .bubble-dismiss,
+.speech-bubble:is(:hover, :focus-within) .bubble-dismiss,
 .bubble-dismiss:focus-visible {
   opacity: 1;
+  pointer-events: auto;
   transform: scale(1);
 }
 .bubble-dismiss:hover {
   background: #b02a44;
 }
+/* A read reply's peek: keep it up again. Shown whenever the peek is (it only appears on hover). */
+.speech-bubble .bubble-keep {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+.speech-bubble .bubble-keep:hover {
+  background: #2f6fb0;
+}
 /* Quick reply: only on bubbles whose session can take a follow-up right now */
+/* Dock views: the unfolded bubble's way to the colleague's pop-up card — a small round button
+   right under the close button. */
+.bubble-popup {
+  position: absolute;
+  right: -8px;
+  top: 14px;
+  z-index: 3;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px #fffaf1;
+  transition: transform 0.15s;
+}
+/* A finger-sized target around the small dot. */
+.bubble-popup::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+}
+.bubble-popup:hover,
+.bubble-popup:focus-visible {
+  transform: scale(1.12);
+}
 .bubble-reply {
+  /* Quiet until the bubble is pointed at: a full blue dot on every bubble shouted. */
+  opacity: 0.45;
   position: absolute;
   right: -8px;
   bottom: -9px;
@@ -1304,7 +1409,7 @@
   max-height: 120px;
   resize: none;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   line-height: 1.45;
   color: var(--text);
   background: var(--bg-2);
@@ -1327,8 +1432,13 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: calc(10px * var(--read-scale));
   color: var(--text-4);
+}
+.quick-reply-bar .quick-reply-attach {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
 }
 .quick-reply-close,
 .quick-reply-send {
@@ -1354,7 +1464,7 @@
 .quick-reply-error {
   display: block;
   margin-top: 5px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   line-height: 1.4;
   color: var(--st-call);
 }
@@ -1509,12 +1619,12 @@
   background: var(--st-call);
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
 }
-/* One desk wide and anchored to the colleague's column (the stack is always its first slot),
-   so the list never runs off the map; long names ellipsize. */
+/* One desk wide, opening leftwards over the colleague's own desk (the stack sits right beside
+   it), so the list never runs off the map's right edge; long names ellipsize. */
 .helper-stack-list {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: -10px;
+  right: -10px;
   z-index: 30;
   width: 164px;
   max-height: 200px;
@@ -1664,18 +1774,19 @@
 .scene-controls {
   display: inline-flex;
   align-items: center;
-  height: 32px;
-  border-radius: 10px;
+  height: 28px;
+  border-radius: 8px;
   /* Nearly opaque instead of blurring the scene behind: the office moves under it all the time,
      and a backdrop blur is recomputed on every frame it changes. */
-  background: rgba(17, 18, 22, 0.92);
-  border: 1px solid var(--line-2);
-  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--line-2),
+    0 4px 14px -6px rgba(0, 0, 0, 0.25);
 }
 .hud-pill {
   gap: 8px;
-  padding: 0 12px;
-  font-size: 11.5px;
+  padding: 0 11px;
+  font-size: 12px;
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
@@ -1701,24 +1812,33 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 26px;
-  min-width: 26px;
+  height: 22px;
+  min-width: 24px;
   padding: 0 7px;
-  border-radius: 7px;
-  font-size: 11.5px;
+  border-radius: 5px;
+  font-size: 12px;
   color: var(--text-2);
 }
 .scene-controls button:hover:not(:disabled) {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--bg-4);
 }
 .scene-controls button:disabled {
   opacity: 0.3;
 }
 .zoom-readout {
-  font-family: var(--font-mono);
-  font-size: 11px !important;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px !important;
   min-width: 82px !important;
+}
+.scene-controls .zone-back {
+  max-width: 220px;
+  color: var(--accent);
+}
+.zone-back span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .zoom-readout.is-fit {
   font-family: var(--font-ui);
@@ -1743,12 +1863,11 @@
   color: var(--text);
 }
 .background-records > summary b {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   padding: 0 5px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-4);
   color: var(--text);
 }
 .background-records .chev {
@@ -1768,11 +1887,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-radius: 14px;
-  background: rgba(22, 24, 29, 0.96);
-  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--bg-1);
   box-shadow: var(--shadow-pop);
-  backdrop-filter: blur(16px);
   animation: modal-in 0.22s var(--ease-out);
 }
 .background-pop > p {
@@ -1824,8 +1941,8 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  border-radius: 16px;
-  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
   background: var(--bg-1);
 }
 .rest-lounge {
@@ -2264,7 +2381,8 @@
 }
 
 /* A user-made area wears a dashed outline on its number tag. */
-.project-floor-mark.custom-area > span {
+.project-floor-mark.custom-area > span,
+.project-floor-mark.custom-area > .zone-mark-focus > span {
   outline: 1px dashed #f6e6cc;
   outline-offset: 1px;
 }
@@ -2289,6 +2407,28 @@
   outline: 2px dashed rgba(246, 230, 204, 0.4);
   outline-offset: 4px;
 }
+/* Where a desk dragged within its zone would go in: a bar at that edge of the desk. */
+.desk-station:is(.drop-before, .drop-after)::before {
+  content: '';
+  position: absolute;
+  top: 46px;
+  bottom: 40px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  z-index: 8;
+  pointer-events: none;
+}
+.desk-station.drop-before::before {
+  left: -2px;
+}
+.desk-station.drop-after::before {
+  right: -2px;
+}
+.desk-station.is-desk-dragging {
+  opacity: 0.55;
+}
 .office-map.drop-new {
   outline: 3px dashed rgba(246, 230, 204, 0.55);
   outline-offset: -10px;
@@ -2300,10 +2440,18 @@
   transform: translateX(-50%);
   height: 32px;
   padding: 0 14px;
-  border-radius: 10px;
-  background: rgba(17, 18, 22, 0.86);
-  border: 1px solid var(--accent-line);
-  color: var(--accent-2);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--accent-line),
+    0 4px 14px -6px rgba(0, 0, 0, 0.25);
+  color: var(--accent);
   font-size: 12px;
   pointer-events: none;
+}
+
+.speech-bubble:hover .bubble-reply,
+.bubble-reply:focus-visible,
+.bubble-reply.open {
+  opacity: 1;
 }

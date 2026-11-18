@@ -1,0 +1,210 @@
+import path from 'node:path';
+import type { Provider, Session, TerminalTarget } from '../src/shared/types.js';
+import { codexTitleThread } from './codex-focus.js';
+import { m } from '../src/shared/i18n/index.js';
+import {
+  focusHost,
+  focusTarget,
+  orcaTerminalList,
+  TerminalFocusError,
+  type TerminalHostDeps,
+  type TerminalLookup,
+} from './terminal-host.js';
+
+/**
+ * The Orca tab a saved conversation was last seen in, when no live agent process vouches for
+ * a terminal (the agent exited, the tab was restored or is asleep). Such a tab is a place to
+ * jump to, never a place to type: it may hold a bare shell. Sending keeps requiring the live
+ * process lookup in desktop/terminals.ts.
+ */
+export type OrcaTabSession = Pick<Session, 'provider' | 'nativeId' | 'cwd' | 'title'> &
+  Partial<Pick<Session, 'nativeTitle'>>;
+
+export interface OrcaTab {
+  kind: 'orca';
+  handle: string;
+  title: string;
+}
+
+/** How one agent names its Orca tab. Agents that never name it have no adapter. */
+export interface OrcaTabAdapter {
+  /** True only when the tab title is evidence of exactly this conversation. */
+  names(title: string, session: OrcaTabSession): boolean;
+}
+
+/** Orca's attention title alternates these two markers while waiting for input. */
+const ATTENTION = /^\[ [.!] \] Action Required \| /;
+const text = (value: string) => value.normalize('NFC').trim().replace(/\s+/g, ' ');
+
+/**
+ * Claude Code titles its terminal "✳ <conversation title>" at rest and swaps the mark for a
+ * spinner frame while working. The mark is required: a shell titled like the conversation is
+ * no evidence. Only a title Claude itself gave the conversation (`nativeTitle`) is compared, so a
+ * first-prompt fallback title never matches by chance; the generic "Claude Code" never does.
+ */
+export const claudeCodeTabs: OrcaTabAdapter = {
+  names(title, session) {
+    if (session.nativeTitle !== true || !session.title) return false;
+    const shown = /^[✳✢✶✻✽·*⠀-⣿] (.+)$/u.exec(title.replace(ATTENTION, ''))?.[1];
+    if (!shown || text(shown) === 'Claude Code') return false;
+    return text(shown) === text(session.title);
+  },
+};
+
+/** Codex puts the thread id first (full, or its 32-character abbreviation ending in "..."). */
+export const codexTabs: OrcaTabAdapter = {
+  names(title, session) {
+    const reference = codexTitleThread(title);
+    const id = session.nativeId.toLowerCase();
+    if (!reference || !/^[0-9a-f-]{36}$/.test(id)) return false;
+    return reference.endsWith('...') ? id.startsWith(reference.slice(0, -3)) : reference === id;
+  },
+};
+
+const ADAPTERS: Partial<Record<Provider, OrcaTabAdapter>> = {
+  claude: claudeCodeTabs,
+  codex: codexTabs,
+};
+export const orcaTabsFor = (provider: Provider): OrcaTabAdapter | null =>
+  ADAPTERS[provider] ?? null;
+
+/**
+ * Whether a tab of the Orca worktree at `worktree` can hold a conversation run in `cwd`: the
+ * worktree's own folder, or a folder inside it (a monorepo package: Orca opens tabs only at a
+ * worktree's root, and the person `cd`s further in). Folder boundaries only: `/a/bc` is not
+ * inside `/a/b`.
+ */
+export function holdsFolder(worktree: string, cwd: string): boolean {
+  const root = path.resolve(worktree);
+  const folder = path.resolve(cwd);
+  return folder === root || folder.startsWith(root === path.sep ? root : root + path.sep);
+}
+
+/**
+ * The one Orca tab in the conversation's folder whose title names it. Conservative on purpose:
+ * a worktree that is the session cwd or holds it (a session in a subfolder), a title the
+ * agent's adapter recognises, a tab that is still attached (`orphaned` terminals have none to
+ * switch to), on this machine, and not claimed by another agent. A disconnected
+ * (`connected: false`) tab still counts: it is the restored or sleeping tab the person can
+ * return to. None or several (say a nested worktree's tab and its parent's): no fallback.
+ *
+ * The title must also name this conversation alone: when another known conversation of the
+ * same agent whose folder the same worktree holds fits the same tab (an equal Claude title, a
+ * Codex id abbreviation they share), the tab may be the other one's, so there is no fallback
+ * either. A subfolder widens only where a tab may be, never what its title must say.
+ */
+export function matchOrcaTab(
+  terminals: Iterable<Record<string, unknown>>,
+  session: OrcaTabSession,
+  others: Iterable<OrcaTabSession> = [],
+  adapter: OrcaTabAdapter | null = orcaTabsFor(session.provider),
+): OrcaTab | null {
+  const match = lookupOrcaTabIn(terminals, session, others, adapter);
+  return match.kind === 'found' ? match.terminal : null;
+}
+
+/**
+ * `matchOrcaTab` with its null split: `unknown` when several tabs fit, or the one that fits
+ * may be another conversation's (the tab may still be this one's).
+ */
+export function lookupOrcaTabIn(
+  terminals: Iterable<Record<string, unknown>>,
+  session: OrcaTabSession,
+  others: Iterable<OrcaTabSession> = [],
+  adapter: OrcaTabAdapter | null = orcaTabsFor(session.provider),
+): TerminalLookup<OrcaTab> {
+  if (!adapter || !session.cwd || !path.isAbsolute(session.cwd)) return { kind: 'none' };
+  const cwd = path.resolve(session.cwd);
+  const found: { tab: OrcaTab; title: string; worktree: string }[] = [];
+  for (const t of terminals) {
+    if (typeof t.handle !== 'string' || !/^term_[\w-]{1,80}$/.test(t.handle)) continue;
+    if (t.orphaned === true || typeof t.tabId !== 'string' || !t.tabId) continue;
+    if (t.executionHostId !== undefined && t.executionHostId !== 'local') continue;
+    if (typeof t.agentIdentity === 'string' && t.agentIdentity !== session.provider) continue;
+    if (
+      typeof t.worktreePath !== 'string' ||
+      !path.isAbsolute(t.worktreePath) ||
+      !holdsFolder(t.worktreePath, cwd)
+    )
+      continue;
+    if (typeof t.title !== 'string' || !adapter.names(t.title, session)) continue;
+    found.push({
+      tab: { kind: 'orca', handle: t.handle, title: t.title.slice(0, 120) },
+      title: t.title,
+      worktree: t.worktreePath,
+    });
+  }
+  if (!found.length) return { kind: 'none' };
+  if (found.length > 1) return { kind: 'unknown' };
+  const { tab, title, worktree } = found[0];
+  for (const other of others)
+    if (
+      other.nativeId !== session.nativeId &&
+      other.provider === session.provider &&
+      other.cwd &&
+      path.isAbsolute(other.cwd) &&
+      holdsFolder(worktree, other.cwd) &&
+      adapter.names(title, other)
+    )
+      return { kind: 'unknown' };
+  return { kind: 'found', terminal: tab };
+}
+
+/**
+ * Looks the tab up in Orca's terminal list (shared 5 s cache with the live lookup). `others`:
+ * every other conversation the office knows, for the uniqueness check above.
+ */
+export async function findOrcaTab(
+  session: OrcaTabSession,
+  deps: TerminalHostDeps,
+  fresh = false,
+  others: Iterable<OrcaTabSession> = [],
+): Promise<OrcaTab | null> {
+  const match = await lookupOrcaTab(session, deps, fresh, others);
+  return match.kind === 'found' ? match.terminal : null;
+}
+
+/**
+ * `findOrcaTab` with its null split, for the duplicate-launch check: `unknown` when Orca's list
+ * could not be read whole (Orca not answering, `truncated`) or the match is ambiguous.
+ */
+export async function lookupOrcaTab(
+  session: OrcaTabSession,
+  deps: TerminalHostDeps,
+  fresh = false,
+  others: Iterable<OrcaTabSession> = [],
+): Promise<TerminalLookup<OrcaTab>> {
+  if (!orcaTabsFor(session.provider)) return { kind: 'none' };
+  // A partial list could hide a second matching tab: no fallback then.
+  const { byHandle, complete } = await orcaTerminalList(deps, fresh);
+  return complete ? lookupOrcaTabIn(byHandle.values(), session, others) : { kind: 'unknown' };
+}
+
+/**
+ * Switches to the conversation's Orca tab itself (the duplicate-launch warning's "go to that
+ * tab"), not to whatever a jump would pick: the list is read afresh and Orca switches only when
+ * exactly this conversation's tab still matches. Nothing is typed into it.
+ */
+export async function focusOrcaTab(
+  session: OrcaTabSession,
+  deps: TerminalHostDeps,
+  others: Iterable<OrcaTabSession> = [],
+  focus: (tab: OrcaTab) => Promise<string> = (tab) => focusHost(tab, deps),
+): Promise<string> {
+  const match = await lookupOrcaTab(session, deps, true, others);
+  if (match.kind !== 'found') throw new TerminalFocusError(m().tmux.tabGone);
+  return focus(match.terminal);
+}
+
+/** A jump-only destination: nothing is ever typed into it. */
+export function orcaTabTarget(tab: OrcaTab): TerminalTarget {
+  return {
+    kind: 'orca',
+    label: tab.title,
+    status: 'tab',
+    canSend: false,
+    canFocus: true,
+    focus: focusTarget(tab),
+    tabOnly: true,
+  };
+}

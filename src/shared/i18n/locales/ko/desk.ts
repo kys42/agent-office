@@ -8,7 +8,7 @@ export const desk: Messages['desk'] = {
   openWork: (name) => `${name} 업무 보기`,
   working: '일하는 중',
   runningTasks: (n) => `${n}개 작업 중`,
-  unread: (n) => `소식 ${n}`,
+  unread: '새 결과',
   arrival: '일이 도착했어요!',
   focusMinutes: (minutes) => `${minutes}분+`,
   newRequests: (n) => `새 요청${n > 1 ? ` ${n}` : ''}`,
@@ -19,16 +19,37 @@ export const desk: Messages['desk'] = {
     pinnedTitle: '고정됨 · 누르면 풀어요',
     hint: '오래 지나도 이 자리에 남아요. 대기 라운지·보관으로 옮기지 않아요.',
   },
+  quota: {
+    label: (tool) => `${tool} 사용 한도 소진`,
+    title: (tool) => `${tool} 사용 한도를 다 썼어요`,
+    account: '계정 전체',
+    model: (model) => `${model} 모델만`,
+    window: (label, scope) => `${label} · ${scope} · 100% 사용`,
+    resets: (when) => `${when} 재설정`,
+    noReset: '재설정 시각 모름',
+    checked: (when) => `${when} 확인`,
+    back: '한도가 돌아오면 불이 다시 켜져요.',
+  },
   veil: {
     label: (name) => `${name} 가리기`,
     title: '가리기',
     hint: '다음 대화(새 요청·최종 응답)가 올 때까지 가려요. 확인 요청이나 오류가 생기면 바로 다시 보여요.',
+    zoneLabel: (zone) => `${zone} 모두 가리기`,
+    zoneTitle: '이 프로젝트 모두 가리기',
+    zoneHint:
+      '지금 이 구역 동료를 한꺼번에 가려요. 각자 다음 대화가 오면 돌아오고, 나를 기다리는 동료는 남아요.',
+  },
+  teammate: {
+    tag: '팀메이트',
+    hint: '다른 세션(리드)이 띄운 에이전트 팀 멤버예요. 리드가 사무실에 없어 따로 앉았어요.',
   },
   helper: {
     name: '보조 동료',
     stackLabel: (count, calling) =>
       `보조 동료 ${count}명${calling ? ', 부르는 보조 있음' : ''} · 명단 보기`,
     stackCount: (count) => `보조 ${count}명`,
+    stackOpen: (count, calling, name) =>
+      `보조 동료 ${count}명${calling ? ', 부르는 보조 있음' : ''} · ${name} 업무 카드 열기`,
     stackList: '보조 동료 명단',
     responded: '응답을 남겼어요',
     label: (name, responded) => `${name}, 보조 동료${responded ? ', 결과 남김' : ''}`,
@@ -46,14 +67,14 @@ export const desk: Messages['desk'] = {
     copyAllLabel: '말풍선 내용 전체 복사',
     copied: '복사했어요',
     dismiss: (name) => `${name ?? '동료'} 말풍선 접기`,
-    dismissTitle: '말풍선만 접기 · 미확인 소식은 남아요',
+    dismissTitle: '말풍선만 접기 · 안 읽은 결과는 그대로예요',
+    keep: (name) => `${name ?? '동료'} 말풍선 다시 띄워 두기`,
+    keepTitle: '다시 띄워 두기 · 나중에 볼게요 (다시 미확인)',
   },
   row: {
-    refresh: '새로고침',
-    refreshTitle: '새로고침 · 지금 기록을 다시 확인해요 (멈춘 수집기도 다시 시작)',
+    reorderHint: '같은 구역 안에서는 끌어서 순서를 바꿀 수 있어요',
     openCard: (name) => `${name} 업무 카드 열기`,
     cardTitle: '팝업으로 보기',
-    cardHint: '이 자리에서 업무 카드를 열어요. 큰 사무실로는 카드의 전체 모드로 가요.',
     empty: '동료들의 기록을 기다리고 있어요.',
     left: (n) => `왼쪽 동료 ${n}명 보기`,
     leftTitle: '이전 책상 · ←',
@@ -65,16 +86,15 @@ export const desk: Messages['desk'] = {
     veiledTitle: (n) =>
       `가린 동료 ${n}명 · 누르면 모두 다시 보여요\n다음 대화가 오면 저절로 돌아와요`,
     veiled: (n) => `가림 ${n}`,
-    lounge: '대기 라운지 · 퇴근한 동료',
-    toRow: '사무실 줄로 보기',
-    toFloor: '바닥 책상으로 보기',
-    toRowTitle: '사무실 줄로 · 구역 바닥과 이름표',
-    toFloorTitle: '바닥 책상으로 · 화면 맨 아래에 책상만, 구역은 깃발',
-    expand: '사무실 펼치기',
-    expandTitle: '큰 사무실 열기',
-    collapse: '책상 줄 접기',
-    collapseTitle: '펫으로 접기 · Esc',
+    pill: '책상 줄 도구',
+    pillMove: '도구 막대 옮기기',
+    pillHint:
+      '끌어서 좌우로 옮기기 · ← → (Shift: 크게) · Home/End: 양 끝 · 두 번 클릭: 오른쪽 끝으로',
+    tinyDesk: (work, dot) =>
+      dot
+        ? `${work}, ${dot === 'attention' ? '호출' : dot === 'error' ? '오류' : '새 답장'}`
+        : work,
+    tinyWaiting: (n) => `기다리는 동료 ${n}명`,
     hide: '데스크 펫 숨기기',
-    hideTitle: '숨기기 · 트레이에서 다시 열 수 있어요',
   },
 };

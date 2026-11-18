@@ -1,5 +1,5 @@
 import { LOCALES, getLocale, messagesFor, type Locale, type Messages } from './i18n';
-import type { OfficeEvent, Preferences, Session } from './types';
+import type { InputRequest, OfficeEvent, Preferences, Session } from './types';
 
 /**
  * Canonical at rest, localized on read. Everything the collector writes itself (redaction
@@ -121,17 +121,48 @@ export const localizePreferences = (p: Preferences, locale: Locale = getLocale()
   ],
 });
 
+/** A local command's line (`/usage 실행`): the command as recorded, the wording localized. */
+function localCommandLine(text: string, locale: Locale): string | undefined {
+  const [head, tail] = canonical().server.event.localCommand('\u0000').split('\u0000');
+  if (text.length <= head.length + tail.length || !text.startsWith(head) || !text.endsWith(tail))
+    return undefined;
+  const command = text.slice(head.length, text.length - tail.length);
+  return messagesFor(locale).server.event.localCommand(localizeText(command, locale));
+}
 function localizeEvent(e: OfficeEvent, locale: Locale): OfficeEvent {
   const from = canonical().server.event;
   const to = messagesFor(locale).server.event;
   let text: string | undefined;
-  if (e.kind === 'lifecycle') text = book(locale).lifecycle(e.text);
+  if (e.kind === 'lifecycle')
+    text = book(locale).lifecycle(e.text) ?? localCommandLine(e.text, locale);
   else if (e.kind === 'tool' && e.tool != null && e.text === from.toolRun(e.tool))
     text = to.toolRun(e.tool);
   else if (e.kind === 'result' && e.text === from.toolResult(e.tool ?? from.tool))
     text = to.toolResult(e.tool ?? to.tool);
   text ??= localizeText(e.text, locale);
-  return text === e.text ? e : { ...e, text };
+  const request = e.request && localizeRequest(e.request, locale);
+  if (text === e.text && request === e.request) return e;
+  return { ...e, text, ...(request ? { request } : {}) };
+}
+/** Agent content stays as written; only the redaction placeholders in it are localized. */
+function localizeRequest(r: InputRequest, locale: Locale): InputRequest {
+  const l = (text: string) => localizeText(text, locale);
+  if (r.kind === 'plan') return { ...r, plan: l(r.plan) };
+  if (r.kind === 'permission') return r;
+  return {
+    ...r,
+    questions: r.questions.map((q) => ({
+      ...q,
+      ...(q.header ? { header: l(q.header) } : {}),
+      question: l(q.question),
+      options: q.options.map((o) => ({
+        ...o,
+        label: l(o.label),
+        ...(o.description ? { description: l(o.description) } : {}),
+        ...(o.preview ? { preview: l(o.preview) } : {}),
+      })),
+    })),
+  };
 }
 /** Activity fallbacks are fixed phrases; excerpts of public messages only carry placeholders. */
 function activityText(text: string, kind: string | undefined, locale: Locale) {

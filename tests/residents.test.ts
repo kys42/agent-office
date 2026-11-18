@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { demoSnapshot } from '../src/lib/demo.js';
-import { officeResidents } from '../src/shared/residents.js';
+import { HELPER_UNFINISHED_MS, officeResidents } from '../src/shared/residents.js';
+import { runtimeObservation } from '../src/shared/runtime.js';
 import { allocateSeats, parentSession, seatKey } from '../src/shared/office.js';
 import {
   applyNoticeReceipt,
@@ -343,6 +344,75 @@ test('Completed helpers remain through silence until a parent request, not a too
   );
   assert.equal(officeResidents([{ ...parent, zone: 'waiting' }, child], now).hidden[0].id, 'c');
 });
+test('Unfinished helpers keep their desk through the parent next request; finished or long-silent ones retire', () => {
+  const parent = make('p', { taskStartedAt: now - 600_000 });
+  const next = { ...parent, taskStartedAt: now };
+  // Mid long tool: the last record (a tool call) is minutes old, so no longer "working" live.
+  const quietAt = now - 10 * 60_000;
+  const child = make('c', {
+    taskStartedAt: now - 500_000,
+    status: 'ready',
+    observedStatus: 'work',
+    updatedAt: quietAt,
+    runtime: runtimeObservation('work', quietAt, 'tool call'),
+    relation: { kind: 'subagent', parentNativeId: 'p', source: 'fixture' },
+  });
+  const kept = officeResidents([next, child], now);
+  assert.equal(kept.hidden.length, 0);
+  assert.equal(kept.sessions.find((s) => s.id === 'c')?.attachedTo, 'p');
+  // Without a runtime record, the raw observed status tells the same.
+  assert.equal(officeResidents([next, { ...child, runtime: undefined }], now).hidden.length, 0);
+  // Fresh work stays as before.
+  const fresh = { ...child, status: 'work' as const, updatedAt: now };
+  assert.equal(
+    officeResidents([next, { ...fresh, runtime: runtimeObservation('work', now, 'tool') }], now)
+      .hidden.length,
+    0,
+  );
+  // A final answer, a completion or an abort ends the helper: it retires on the boundary.
+  const done = {
+    ...child,
+    observedStatus: 'done' as const,
+    runtime: runtimeObservation('done', quietAt, 'end_turn'),
+  };
+  assert.equal(officeResidents([parent, done], now).hidden.length, 0);
+  assert.equal(officeResidents([next, done], now).hidden[0].id, 'c');
+  const aborted = {
+    ...child,
+    observedStatus: 'idle' as const,
+    runtime: runtimeObservation('idle', quietAt, 'turn_aborted'),
+  };
+  assert.equal(officeResidents([next, aborted], now).hidden[0].id, 'c');
+  // Stopped by the person mid-tool (Claude's interrupt note reads as an aborted turn).
+  const interrupted = {
+    ...child,
+    observedStatus: 'idle' as const,
+    statusReason: 'turn_aborted event',
+    runtime: undefined,
+  };
+  assert.equal(officeResidents([parent, interrupted], now).hidden.length, 0);
+  assert.equal(officeResidents([next, interrupted], now).hidden[0].id, 'c');
+  // A reply cut short (max_tokens, API error) still reads as 'think': kept while recent.
+  const cut = { ...child, observedStatus: 'think' as const, runtime: undefined };
+  assert.equal(officeResidents([next, cut], now).hidden.length, 0);
+  // Silent mid-task beyond the ceiling (crashed, killed, cut short): it no longer holds the desk.
+  assert.equal(HELPER_UNFINISHED_MS, 30 * 60_000);
+  const at = (t: number) => ({
+    ...child,
+    updatedAt: t,
+    runtime: runtimeObservation('work', t, 'tool'),
+  });
+  assert.equal(officeResidents([next, at(now - HELPER_UNFINISHED_MS)], now).hidden.length, 0);
+  assert.equal(officeResidents([next, at(now - HELPER_UNFINISHED_MS - 1)], now).hidden[0].id, 'c');
+  assert.equal(
+    officeResidents([next, { ...cut, updatedAt: now - 31 * 60_000 }], now).hidden[0].id,
+    'c',
+  );
+  // Parent sent to waiting: the helper goes off the floor with it, unfinished or not.
+  assert.equal(officeResidents([{ ...next, zone: 'waiting' }, child], now).hidden[0].id, 'c');
+  // Archiving the parent still takes an unfinished helper with it.
+  assert.equal(officeResidents([{ ...next, archived: true }, child], now).hidden[0].id, 'c');
+});
 test('Nested helpers retire on their main task boundary; uncollected parents retain recent results conservatively', () => {
   const main = make('main', { taskStartedAt: now - 9000 });
   const child = make('child', {
@@ -360,4 +430,35 @@ test('Nested helpers retire on their main task boundary; uncollected parents ret
   );
   assert.equal(officeResidents([nested], now).hidden.length, 0);
   assert.equal(officeResidents([{ ...nested, zone: 'waiting' }], now).hidden.length, 1);
+});
+test('An unfinished nested helper stays at the main desk after its finished parent helper retires', () => {
+  const main = make('main', { taskStartedAt: now - 9000 });
+  const next = { ...main, taskStartedAt: now };
+  const quietAt = now - 10 * 60_000;
+  const child = make('child', {
+    taskStartedAt: now - 7000,
+    observedStatus: 'done',
+    relation: { kind: 'subagent', parentNativeId: 'main', source: 'fixture' },
+  });
+  const nested = make('nested', {
+    taskStartedAt: now - 6000,
+    status: 'ready',
+    observedStatus: 'work',
+    updatedAt: quietAt,
+    relation: { kind: 'subagent', parentNativeId: 'child', source: 'fixture' },
+  });
+  const { sessions, hidden } = officeResidents([next, child, nested], now);
+  assert.deepEqual(
+    hidden.map((s) => s.id),
+    ['child'],
+  );
+  const kept = sessions.find((s) => s.id === 'nested');
+  // A helper desk beside main, not a colleague of its own.
+  assert.equal(kept?.attachedTo, 'main');
+  assert.equal(kept?.zone, 'office');
+  assert.equal(allocateSeats(sessions, {})[seatKey(kept!)], undefined);
+  // Before main's next request both stay, seated through the chain as usual.
+  const before = officeResidents([main, child, nested], now).sessions;
+  assert.equal(before.find((s) => s.id === 'nested')?.attachedTo, 'main');
+  assert.equal(before.find((s) => s.id === 'child')?.attachedTo, 'main');
 });

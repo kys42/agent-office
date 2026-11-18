@@ -1,0 +1,105 @@
+import { Eraser, Loader, Terminal } from 'lucide-react';
+import type { DraftPrompt } from '../lib/useComposerSend';
+import { useI18n } from '../lib/i18n';
+
+/**
+ * The agent's composer already holds text: show it, then [Clear & send] or [Cancel]. Shared by
+ * the work card and the bubble quick reply. Clearing puts the text on the clipboard first (the
+ * desktop app does that), so no append option exists: mixing two instructions is never offered.
+ * Focus stays where it was: a second Enter in the reply box only asks again, never clears.
+ * Partially hidden text requires a warning and explicit replacement; the terminal remains an option.
+ */
+export function DraftConfirm({
+  draft,
+  sending,
+  privacy = false,
+  blocked = false,
+  onConfirm,
+  onSendDraft,
+  onCancel,
+  onJump,
+}: {
+  draft: DraftPrompt;
+  sending: boolean;
+  privacy?: boolean;
+  /** The target is not taking input right now (waiting for an answer, gone): no clearing. */
+  blocked?: boolean;
+  onConfirm: () => void;
+  /** Sends the composer's text itself instead of the reply. */
+  onSendDraft?: () => void;
+  onCancel: () => void;
+  /** Brings the session's terminal to the front, when it can. */
+  onJump?: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    // A status region read once, as its text: no label repeating the heading.
+    <div className="draft-confirm" role="status">
+      <strong>{t.terminal.draftFound(draft.agent)}</strong>
+      {draft.reason && <small>{draft.reason}</small>}
+      {draft.changed && <small>{t.terminal.draftChanged}</small>}
+      {draft.clipboard && <small>{t.terminal.draftPartlySaved}</small>}
+      <pre className="draft-confirm-text">{privacy ? t.terminal.draftHidden : draft.draft}</pre>
+      {draft.partial && <small>{t.terminal.partialDraftWarning}</small>}
+      {draft.clearable === false ? (
+        <small>{t.terminal.draftNotWhole}</small>
+      ) : (
+        draft.maybeSuggestion && <small>{t.terminal.draftMaybeSuggestion}</small>
+      )}
+      <div className="draft-confirm-bar">
+        <button
+          type="button"
+          className="draft-confirm-cancel"
+          onClick={onCancel}
+          disabled={sending}
+        >
+          {t.terminal.cancelClear}
+        </button>
+        {draft.clearable === false ? (
+          onJump && (
+            <button type="button" className="draft-confirm-clear" onClick={onJump}>
+              <Terminal size={12} />
+              {t.terminal.openTerminal}
+            </button>
+          )
+        ) : (
+          <>
+            {/* One line only: a longer draft is read off the screen with its indents trimmed,
+              so "as is" could not be kept. */}
+            {onSendDraft && !privacy && !draft.partial && !draft.draft.includes('\n') && (
+              <button
+                type="button"
+                className="draft-confirm-cancel"
+                title={t.terminal.sendDraftTitle}
+                onClick={onSendDraft}
+                disabled={sending || blocked}
+              >
+                {t.terminal.sendDraft}
+              </button>
+            )}
+            {draft.partial && onJump && (
+              <button
+                type="button"
+                className="draft-confirm-cancel"
+                onClick={onJump}
+                disabled={sending}
+              >
+                <Terminal size={12} />
+                {t.terminal.openTerminal}
+              </button>
+            )}
+            <button
+              type="button"
+              className="draft-confirm-clear"
+              onClick={onConfirm}
+              disabled={sending || blocked}
+            >
+              {sending ? <Loader size={12} className="now-spin" /> : <Eraser size={12} />}
+              {draft.partial ? t.terminal.clearPartialAndSend : t.terminal.clearAndSend}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { OfficeEvent, Session } from '../../src/shared/types.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
@@ -13,7 +13,7 @@ import { hash, PLAN_APPROVAL_TOOL } from './normalize.js';
  * interactive CLI while it runs. It is a private, undocumented format, so every field is
  * validated, anything unexpected is ignored, and nothing here ever writes to it. The collector
  * reads it to see a permission prompt the transcript cannot show; the desktop shell reads it to
- * find a session's terminal and to type only into an idle one.
+ * find a session's terminal and to type only into an open prompt.
  */
 
 export interface RunOptions {
@@ -21,6 +21,8 @@ export interface RunOptions {
   /** Written to stdin, for text that must not pass through argv parsing. */
   input?: string;
   timeout?: number;
+  /** Bytes of stdout kept; a longer answer fails. 1 MB when left out. */
+  maxBuffer?: number;
 }
 
 export interface ClaudeLiveDeps {
@@ -36,21 +38,46 @@ export interface ClaudeProcess {
   pid: number;
   sessionId: string;
   procStart: string;
-  /** Seen: `busy`, `idle`, `waiting`, `shell`. Only `idle` may receive typed input. */
+  /**
+   * Seen: `busy`, `idle`, `waiting`, `shell` (at rest while a background shell runs). All but
+   * `waiting` may receive typed input, once the screen confirms the prompt (desktop/terminals.ts).
+   */
   status: string;
   updatedAt: number;
   /** When `status` last changed (epoch ms), if the CLI wrote it. */
   statusUpdatedAt?: number;
   /** What a `waiting` process waits for, e.g. `permission prompt`. */
   waitingFor?: string;
+  /**
+   * `interactive` (absent: an interactive record), or `bg`: a background session run by Claude's
+   * daemon in a pty of its own, with no terminal of ours. A window shows it while attached.
+   */
+  kind?: 'interactive' | 'bg';
+  /** A background session's short id (the first 8 characters of its session id). */
+  jobId?: string;
+  /**
+   * Set on an interactive window that moved its conversation to the background (← for agents):
+   * the job it parked. While set, the window's screen and input belong to Claude's agents view
+   * and the jobs it opens, never to this record's own session.
+   */
+  parkedJobId?: string;
+  /** The session's display name, shown in its prompt box and terminal title. */
+  name?: string;
 }
+
+/** Claude's job ids: 8 lowercase hex characters, the prefix of the session id. */
+export const JOB_ID = /^[0-9a-f]{8}$/;
 
 export const runCommand: ClaudeLiveDeps['run'] = (file, args, options = {}) =>
   new Promise((resolve, reject) => {
     const child = execFile(
       file,
       args,
-      { timeout: options.timeout ?? 8000, maxBuffer: 1_000_000, env: options.env ?? process.env },
+      {
+        timeout: options.timeout ?? 8000,
+        maxBuffer: options.maxBuffer ?? 1_000_000,
+        env: options.env ?? process.env,
+      },
       (error, stdout) =>
         error ? reject(Object.assign(error, { stdout: String(stdout ?? '') })) : resolve(stdout),
     );
@@ -106,7 +133,10 @@ export function parseClaudeProcess(file: string, text: string): ClaudeProcess | 
     if (!Number.isInteger(pid) || pid <= 1 || d?.pid !== pid) return null;
     if (typeof d.sessionId !== 'string' || !/^[\w-]{8,80}$/.test(d.sessionId)) return null;
     if (typeof d.procStart !== 'string' || typeof d.status !== 'string') return null;
-    if (d.kind !== undefined && d.kind !== 'interactive') return null;
+    const kind = d.kind ?? 'interactive';
+    if (kind !== 'interactive' && kind !== 'bg') return null;
+    // A background record names its job; anything else is not this format.
+    if (kind === 'bg' && !(JOB_ID.test(d.jobId) && d.sessionId.startsWith(d.jobId))) return null;
     const statusUpdatedAt = epoch(d.statusUpdatedAt);
     const waitingFor =
       typeof d.waitingFor === 'string' && d.waitingFor.length <= 80
@@ -120,6 +150,16 @@ export function parseClaudeProcess(file: string, text: string): ClaudeProcess | 
       updatedAt: epoch(d.updatedAt) ?? 0,
       ...(statusUpdatedAt ? { statusUpdatedAt } : {}),
       ...(waitingFor ? { waitingFor } : {}),
+      kind,
+      ...(kind === 'bg' && { jobId: d.jobId as string }),
+      // Any value parks the window; only a well-formed one can name the job it shows.
+      ...(d.parkedJobId !== undefined &&
+        d.parkedJobId !== null && {
+          parkedJobId: typeof d.parkedJobId === 'string' ? d.parkedJobId : '',
+        }),
+      ...(typeof d.name === 'string' &&
+        d.name.trim() &&
+        d.name.length <= 200 && { name: spaces(d.name) }),
     };
   } catch {
     return null;
@@ -141,15 +181,48 @@ export async function readClaudeProcesses(dir: string): Promise<ClaudeProcess[]>
 }
 
 /**
- * The record's process is alive and is the one that wrote it: a recycled PID started at another
- * time. procStart is written in UTC with the C locale. A failed check is not remembered.
+ * `readClaudeProcesses` for a caller that reads the directory every second: a record file is
+ * parsed again only when its size or mtime moved (`cache` is the caller's, by file name).
  */
-export async function isLiveProcess(
+export async function readClaudeProcessesCached(
+  dir: string,
+  cache: Map<string, { stamp: string; record: ClaudeProcess | null }>,
+): Promise<ClaudeProcess[]> {
+  const files = (await readdir(dir).catch(() => [] as string[]))
+    .filter((name) => /^\d+\.json$/.test(name))
+    .slice(0, 1000);
+  const records = await Promise.all(
+    files.map(async (name) => {
+      const file = path.join(dir, name);
+      const st = await stat(file).catch(() => null);
+      if (!st) return null;
+      const stamp = `${st.size}:${st.mtimeMs}`;
+      const hit = cache.get(name);
+      if (hit?.stamp === stamp) return hit.record;
+      const text = await readFile(file, 'utf8').catch(() => null);
+      if (text === null) return null;
+      const record = parseClaudeProcess(name, text);
+      cache.set(name, { stamp, record });
+      return record;
+    }),
+  );
+  const present = new Set(files);
+  for (const name of cache.keys()) if (!present.has(name)) cache.delete(name);
+  return records.filter((r): r is ClaudeProcess => !!r);
+}
+
+/**
+ * Whether the record's process is alive and is the one that wrote it: `live`; `gone` when it
+ * ended or its PID was recycled (it started at another time); `unknown` when the PID is alive
+ * but its start time could not be read. procStart is written in UTC with the C locale. A failed
+ * check is not remembered.
+ */
+export async function processIdentity(
   record: ClaudeProcess,
   deps: ClaudeLiveDeps,
   fresh = false,
-): Promise<boolean> {
-  if (!deps.alive(record.pid)) return false;
+): Promise<'live' | 'gone' | 'unknown'> {
+  if (!deps.alive(record.pid)) return 'gone';
   const key = `lstart:${record.pid}:${record.procStart}`;
   const started = await remember(deps, key, 30_000, fresh, () =>
     deps
@@ -158,24 +231,158 @@ export async function isLiveProcess(
       })
       .catch(() => ''),
   );
-  if (!started.trim()) forget(deps, key);
-  return !!started && spaces(started) === spaces(record.procStart);
+  if (!started.trim()) {
+    forget(deps, key);
+    // `ps` fails for a PID that just ended; while it is alive, nothing is known.
+    return deps.alive(record.pid) ? 'unknown' : 'gone';
+  }
+  return spaces(started) === spaces(record.procStart) ? 'live' : 'gone';
 }
 
-/** The live interactive Claude Code process for a session, verified against PID reuse. */
+/** The record's process is alive and is the one that wrote it (`processIdentity`). */
+export const isLiveProcess = async (record: ClaudeProcess, deps: ClaudeLiveDeps, fresh = false) =>
+  (await processIdentity(record, deps, fresh)) === 'live';
+
+/**
+ * The records that pass `match` and whose process is live, or null while any of them cannot be
+ * verified (alive, start time unreadable): it may be one of them, so nothing is proven.
+ */
+async function liveMatches(
+  deps: ClaudeLiveDeps,
+  fresh: boolean,
+  match: (record: ClaudeProcess) => boolean,
+): Promise<ClaudeProcess[] | null> {
+  const found: ClaudeProcess[] = [];
+  let unknown = false;
+  for (const record of await recordsOf(deps, fresh)) {
+    if (!match(record)) continue;
+    const identity = await processIdentity(record, deps, fresh);
+    if (identity === 'live') found.push(record);
+    else if (identity === 'unknown') unknown = true;
+  }
+  return unknown ? null : found;
+}
+
+/**
+ * A session name as a terminal title shows it, reduced to what tells two titles apart: Orca's
+ * attention marker and Claude's leading status glyph (`✳ `, a spinner) are dropped, repeatedly,
+ * and runs of spaces are one. A title shows a job only when both reduce alike, and two jobs
+ * whose names reduce alike could show the same title: they are namesakes.
+ */
+export function titleKey(text: string): string {
+  let key = spaces(text);
+  for (let i = 0; i < 16; i++) {
+    const next = spaces(
+      key.replace(/^\[ [.!] \] Action Required \| /, '').replace(/^[^\p{L}\p{N}\s]{1,2} /u, ''),
+    );
+    if (next === key) break;
+    key = next;
+  }
+  return key;
+}
+
+/** A window that moved its conversation to the background: its own record is stale. */
+export const isParked = (record: ClaudeProcess) => record.parkedJobId !== undefined;
+
+/** One directory read serves a burst of lookups (e.g. every bubble on the office floor). */
+const recordsOf = (deps: ClaudeLiveDeps, fresh: boolean) =>
+  remember(deps, `records:${deps.sessionsDir}`, 1000, fresh, () =>
+    readClaudeProcesses(deps.sessionsDir),
+  );
+
+/**
+ * The live Claude Code process that runs a session (an interactive window, or a background
+ * session's own process), verified against PID reuse. A parked window is not it: what is typed
+ * there goes to the job it shows. `parked: true` still counts such a window, for a question
+ * of whether the session's process exists at all (it may return to its conversation).
+ */
 export async function findClaudeProcess(
   sessionId: string,
   deps: ClaudeLiveDeps,
   fresh = false,
+  options: { parked?: boolean } = {},
 ): Promise<ClaudeProcess | null> {
-  // One directory read serves a burst of lookups (e.g. every bubble on the office floor).
-  const records = await remember(deps, `records:${deps.sessionsDir}`, 1000, fresh, () =>
-    readClaudeProcesses(deps.sessionsDir),
+  const candidates = (await recordsOf(deps, fresh)).filter(
+    (r) => r.sessionId === sessionId && (options.parked || !isParked(r)),
   );
-  const candidates = records.filter((r) => r.sessionId === sessionId);
   candidates.sort((a, b) => b.updatedAt - a.updatedAt);
   for (const record of candidates) if (await isLiveProcess(record, deps, fresh)) return record;
   return null;
+}
+
+/**
+ * The live windows whose own record names this session but that parked it (`parkedJobId`),
+ * verified against PID reuse, newest first; null while one of them cannot be verified. Whether
+ * such a window still holds the session is for the job it parked to say (desktop/terminals.ts).
+ */
+export async function parkedHolders(
+  sessionId: string,
+  deps: ClaudeLiveDeps,
+  fresh = false,
+): Promise<ClaudeProcess[] | null> {
+  const found = await liveMatches(
+    deps,
+    fresh,
+    (record) => record.sessionId === sessionId && isParked(record),
+  );
+  return found && found.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
+ * The live interactive windows that parked this background job (its `jobId` as their
+ * `parkedJobId`), verified against PID reuse. Such a window opened Claude's agents view on the
+ * job; whether it still shows that job is for its screen to say (desktop/terminals.ts).
+ */
+export async function parkedWindows(
+  job: ClaudeProcess,
+  deps: ClaudeLiveDeps,
+  fresh = false,
+): Promise<ClaudeProcess[] | null> {
+  if (job.kind !== 'bg' || !job.jobId) return [];
+  return liveMatches(
+    deps,
+    fresh,
+    (record) => record.kind !== 'bg' && record.parkedJobId === job.jobId,
+  );
+}
+
+/** The live background session of a job id, verified against PID reuse. */
+export async function findClaudeJob(
+  jobId: string,
+  deps: ClaudeLiveDeps,
+  fresh = false,
+): Promise<ClaudeProcess | null> {
+  for (const record of await recordsOf(deps, fresh))
+    if (
+      record.kind === 'bg' &&
+      record.jobId === jobId &&
+      (await isLiveProcess(record, deps, fresh))
+    )
+      return record;
+  return null;
+}
+
+/**
+ * Live background sessions other than `job` whose title could read as the same (`titleKey`), or
+ * null while one of them cannot be verified (it may be live). A job without a name, or with one
+ * that reduces to nothing, has no title of its own: null.
+ */
+export async function namesakeJobs(
+  job: ClaudeProcess,
+  deps: ClaudeLiveDeps,
+  fresh = false,
+): Promise<ClaudeProcess[] | null> {
+  const key = job.name ? titleKey(job.name) : '';
+  if (!key) return null;
+  return liveMatches(
+    deps,
+    fresh,
+    (record) =>
+      record.kind === 'bg' &&
+      record.sessionId !== job.sessionId &&
+      // A namesake without a name of its own could show any title.
+      (!record.name || titleKey(record.name) === key),
+  );
 }
 
 /**
@@ -183,19 +390,41 @@ export async function findClaudeProcess(
  * id (newest record first). Only `wanted` sessions are verified, so a pass costs one directory
  * read and, while something waits, one memoized `ps` per process.
  */
-export async function waitingClaudeProcesses(
+export function waitingClaudeProcesses(
   deps: ClaudeLiveDeps,
   wanted: ReadonlySet<string>,
+  records?: ClaudeProcess[],
+): Promise<Map<string, ClaudeProcess>> {
+  return liveClaudeProcesses(deps, wanted, WAITING, records);
+}
+
+const WAITING: ReadonlySet<string> = new Set(['waiting']);
+
+/**
+ * `wanted` sessions whose live, verified process has one of `statuses`, by native session id
+ * (newest record first). `records` lets one directory read serve several lookups; verification
+ * uses the same 30-second memo as every other caller.
+ */
+export async function liveClaudeProcesses(
+  deps: ClaudeLiveDeps,
+  wanted: ReadonlySet<string>,
+  statuses: ReadonlySet<string>,
+  records?: ClaudeProcess[],
 ): Promise<Map<string, ClaudeProcess>> {
   const found = new Map<string, ClaudeProcess>();
-  const records = (await readClaudeProcesses(deps.sessionsDir))
-    .filter((r) => r.status === 'waiting' && wanted.has(r.sessionId))
+  const candidates = (records ?? (await readClaudeProcesses(deps.sessionsDir)))
+    // A parked window's status is the moment it parked, not its session's state.
+    .filter((r) => statuses.has(r.status) && wanted.has(r.sessionId) && !isParked(r))
     .sort((a, b) => b.updatedAt - a.updatedAt);
-  for (const record of records)
+  for (const record of candidates)
     if (!found.has(record.sessionId) && (await isLiveProcess(record, deps)))
       found.set(record.sessionId, record);
   return found;
 }
+
+/** What a live wait changes in a session, so a pass can tell whether it moved ('' for none). */
+export const liveWaitSignature = (live: ClaudeProcess | undefined) =>
+  live ? `${live.pid}:${live.statusUpdatedAt ?? live.updatedAt}:${live.waitingFor ?? ''}` : '';
 
 /**
  * The latest tool call of the current turn that has no result yet: what a permission prompt

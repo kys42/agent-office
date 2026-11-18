@@ -52,7 +52,7 @@ export function applyZone(s: Session, rules?: ZoneRule[]): Session {
         : undefined,
   };
 }
-export const zoneLabel = (s: Session) => s.area?.name ?? s.project;
+export const zoneLabel = (s: Session) => s.area?.name ?? s.workspace?.zoneName ?? s.project;
 /** Scopes the inspector can offer for this session, most useful first. */
 export function zoneCandidates(s: Session): Omit<ZoneRule, 'id' | 'name'>[] {
   const repo = s.workspace?.evidence === 'git-common-dir' ? s.workspace.key : undefined;

@@ -2,36 +2,44 @@ import { useId, type CSSProperties } from 'react';
 import { EyeOff } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 
-/** Hover control on a desk: hide this colleague until their next conversation. */
+/**
+ * Hover control on a desk: hide this colleague until their next conversation. `zone` makes it
+ * the zone sign's control, hiding everyone in that project at once.
+ */
 export function VeilButton({
   name,
   onVeil,
+  zone = false,
   className = '',
   style,
 }: {
   name: string;
   onVeil: () => void;
+  zone?: boolean;
   className?: string;
   style?: CSSProperties;
 }) {
   const { t } = useI18n();
+  const v = t.desk.veil;
   const tip = useId();
   return (
     <button
-      className={`desk-hover-btn veil-button ${className}`}
+      className={`desk-hover-btn veil-button ${zone ? 'zone-veil' : ''} ${className}`}
       style={style}
       data-solid
-      aria-label={t.desk.veil.label(name)}
+      aria-label={zone ? v.zoneLabel(name) : v.label(name)}
       aria-describedby={tip}
+      // Its own explanation shows; never the zone sign's tooltip around it.
+      title={zone ? '' : undefined}
       onClick={(e) => {
         e.stopPropagation();
         onVeil();
       }}
     >
-      <EyeOff size={13} strokeWidth={2.4} />
+      <EyeOff size={zone ? 12 : 13} strokeWidth={2.4} />
       <span className="veil-tip" role="tooltip" id={tip}>
-        <b>{t.desk.veil.title}</b>
-        {t.desk.veil.hint}
+        <b>{zone ? v.zoneTitle : v.title}</b>
+        {zone ? v.zoneHint : v.hint}
       </span>
     </button>
   );

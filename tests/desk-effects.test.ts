@@ -8,10 +8,17 @@ import {
   deskSpeech,
   freshRequest,
   hopping,
+  speechDot,
   stationSpeech,
 } from '../src/shared/speech.js';
 import { deskPapers, FOCUS_LABELS, focusLevel, MAX_PAPERS } from '../src/shared/presentation.js';
-import { buildOfficeModel, petSummary } from '../src/shared/office-model.js';
+import {
+  buildOfficeModel,
+  petChoices,
+  petShown,
+  petStep,
+  petSummary,
+} from '../src/shared/office-model.js';
 import type { OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
 import { setLocale } from '../src/shared/i18n/index.js';
 // These tests assert the original Korean copy: pin the language so results never depend on the
@@ -183,4 +190,84 @@ test('a desk waiting for the person keeps saying so through an arrival', () => {
   const failed = deskSpeech(erroring, [fresh], 3, now);
   assert.equal(failed.bubble?.id, stationSpeech(erroring, [fresh], 3, now).bubble?.id);
   assert.equal(failed.hop, false);
+});
+
+test('the pet arrows skip resting colleagues, unless everyone rests', () => {
+  const working = make('w', { officeSeat: 1, status: 'work', updatedAt: now });
+  const resting = make('r', { officeSeat: 2, status: 'idle', updatedAt: now - 5 * 3600_000 });
+  const calling = make('c', { officeSeat: 3, status: 'call', updatedAt: now });
+  const busy = buildOfficeModel(snap([working, resting, calling]), now);
+  assert.equal(busy.view('r')?.group, 'resting');
+  assert.deepEqual(
+    petChoices(busy).map((v) => v.session.id),
+    ['w', 'c'],
+  );
+  const quiet = buildOfficeModel(snap([resting]), now);
+  assert.deepEqual(
+    petChoices(quiet).map((v) => v.session.id),
+    ['r'],
+  );
+});
+
+test('the pet steps through visible colleagues in row order and keeps a pick while it is there', () => {
+  const a = make('a', { officeSeat: 1 });
+  const b = make('b', { officeSeat: 2 });
+  const c = make('c', { officeSeat: 3, hiddenAt: now - 1000 });
+  const model = buildOfficeModel(snap([a, b, c]), now);
+  const ids = petChoices(model).map((v) => v.session.id);
+  assert.deepEqual(ids, ['a', 'b'], 'hidden colleagues are left out');
+  const choices = petChoices(model);
+  assert.equal(petStep(choices, 'a', 1)?.session.id, 'b');
+  assert.equal(petStep(choices, 'b', 1)?.session.id, 'a', 'round at the end');
+  assert.equal(petStep(choices, 'a', -1)?.session.id, 'b', 'round at the start');
+  assert.equal(petStep(choices, 'gone', 1)?.session.id, 'a');
+  assert.equal(petStep([], 'a', 1), undefined);
+  const pet = petSummary(model);
+  assert.deepEqual(petShown(choices, pet, 'b'), { view: model.view('b'), chosen: true });
+  // A pick no longer there (hidden, archived) gives way to who speaks or leads.
+  assert.equal(petShown(choices, pet, 'c').chosen, false);
+  assert.equal(petShown(choices, pet, 'c').view?.session.id, pet.lead?.session.id);
+  assert.equal(petShown(choices, pet, null).chosen, false);
+});
+
+test('the tiny row dot: a call or error stays while waiting, a final reply until read', () => {
+  const idle = make('a', { status: 'idle' });
+  const dot = (s: Session, notices: OfficeNotice[]) => speechDot(s, deskSpeech(s, notices, 3, now));
+  const reply = request('a', { kind: 'reply', phase: 'final' });
+  assert.deepEqual(dot(idle, [reply]), { tone: 'reply', id: reply.id });
+  assert.equal(dot(idle, [{ ...reply, seenAt: now }]), undefined);
+  // Progress notes and quiet desks say nothing in tiny.
+  assert.equal(dot(idle, [request('a', { kind: 'progress' })]), undefined);
+  assert.equal(dot(idle, []), undefined);
+  const ask = request('a', { kind: 'attention', seenAt: now });
+  assert.equal(dot(make('a', { status: 'call' }), [ask])?.tone, 'attention');
+  assert.equal(dot(make('a', { status: 'call' }), [])?.tone, 'attention');
+  assert.equal(dot(idle, [request('a', { kind: 'error' })])?.tone, 'error');
+  assert.equal(dot(make('a', { status: 'error' }), [])?.tone, 'error');
+});
+
+test('the tiny reply dot follows the unread final reply, not just the current bubble', () => {
+  const idle = make('a', { status: 'idle' });
+  const dot = (s: Session, notices: OfficeNotice[]) => speechDot(s, deskSpeech(s, notices, 3, now));
+  // Older than the bubble hours: the bubble is gone, the unread reply still marks the desk.
+  const old = request('a', {
+    kind: 'reply',
+    phase: 'final',
+    at: now - 5 * 3600_000,
+    receivedAt: now - 5 * 3600_000,
+  });
+  assert.equal(deskSpeech(idle, [old], 3, now).bubble, undefined);
+  assert.deepEqual(dot(idle, [old]), { tone: 'reply', id: old.id });
+  // A later progress note takes the bubble; the unread reply keeps its dot.
+  const reply = request('a', { kind: 'reply', phase: 'final', at: now - min });
+  const note = request('a', { kind: 'progress', at: now });
+  assert.equal(deskSpeech(idle, [reply, note], 3, now).bubble?.id, note.id);
+  assert.deepEqual(dot(idle, [reply, note]), { tone: 'reply', id: reply.id });
+  // The newest unread reply names the dot (so a new one pops again); read ones say nothing.
+  const newer = request('a', { kind: 'reply', phase: 'final', at: now - 30_000 });
+  assert.equal(dot(idle, [reply, newer, note])?.id, newer.id);
+  assert.equal(dot(idle, [{ ...reply, seenAt: now }, note]), undefined);
+  // Background runs and unclassified replies are not inbox news.
+  assert.equal(dot(idle, [{ ...reply, background: true }, note]), undefined);
+  assert.equal(dot(idle, [{ ...reply, phase: undefined }, note]), undefined);
 });

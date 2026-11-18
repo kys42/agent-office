@@ -5,7 +5,8 @@
 ## 처리 흐름
 
 ```text
-OfficeService (5초 폴링, 읽기 범위·오류 격리)
+OfficeService (5초 전체 수집, 읽기 범위·오류 격리
+               + 일하는 동료만 1초 hot path: stat·fs.watch 힌트 → 같은 파일 단계 → 부분 저장)
   ├─ JSONL 탐색 → RecordWindowCache(append 증분 / readRecords) → Orca byte reader
   │                            → resolveIdentity + parseRecords
   ├─ Codex/Claude index·DB·sidecar → 이름·작업 위치 보완
@@ -22,7 +23,9 @@ OfficeService (5초 폴링, 읽기 범위·오류 격리)
   공통 관측·제품 정책 → 사무실 / 상세 / 검색 / 인수인계 / 읽기 MCP
 ```
 
-형식·관계 근거를 해석하는 경계는 어댑터이고, 어떤 정보를 책상이나 소식함에 표시할지는 공통 제품 정책이다. 같은 입력이 공급자 이름만 다르다는 이유로 다른 사용자 경험을 만들지 않는다.
+SQLite의 이벤트 JSON도 JSONL과 같이 null·스칼라·배열을 정상 이벤트로 취급하지 않는다. 해당 행만 건너뛰고 `partial`을 표시하며 앞뒤 정상 대화와 원본 DB는 보존한다. JSON 파싱 성공만으로 정상 이벤트 객체임을 보장할 수 없다.
+
+형식·관계 근거를 해석하는 경계는 어댑터이고, 어떤 정보를 책상이나 말풍선에 표시할지는 공통 제품 정책이다. 같은 입력이 공급자 이름만 다르다는 이유로 다른 사용자 경험을 만들지 않는다.
 
 ## 모듈 출처와 실제 실행 경계
 
@@ -53,6 +56,7 @@ Claude-Mem, AgentPet은 비교 조사만 했고 현재 수집 런타임에 포�
 
 - Codex는 첫 owner `session_meta`의 `payload.id` → `session_id` → `thread_id`를 사용한다. 뒤에 상속된 부모 metadata가 있어도 owner를 바꾸지 않는다. 파일명이 달라도 native ID가 같으면 continuation으로 합친다.
 - Claude root는 `sessionId`; subagent는 마지막 `subagents` 경로 앞 부모 UUID와 agent ID를 함께 사용해 `subagent:<parent>:<agent>`로 범위를 나눈다. `parentUuid` 하나만으로 부모 세션을 추론하지 않는다.
+- Claude 에이전트 팀(2.1.316 번들 기준): **in-process 팀메이트**는 리드 세션의 `subagents/agent-<id>.jsonl` sidechain이라 위 subagent 규칙으로 이미 리드의 보조다. **창(tmux·iTerm2) 팀메이트**는 `--team-name/--agent-name/--parent-session-id`로 뜬 별도 프로세스라 자기 `sessionId`의 최상위 `<id>.jsonl`을 쓰고, user/assistant 레코드마다 `teamName`·`agentName`이 붙는다(리드 레코드에는 없음, 리드 자신의 멤버 이름은 `team-lead`). `--parent-session-id`는 분석용이라 transcript에 남지 않는다. 그래서 `claudeTeammate`(identity.ts)가 sidechain이 아닌 레코드의 `teamName`+`agentName`(`team-lead` 제외)으로 팀메이트를 알아보고 `relation.team`과 멤버 이름(제목 우선순위 custom-title 다음, ai-title보다 앞)을 남긴다. 리드는 `claudeTeamLead`(claude.ts)가 ① `<claude home>/teams/<팀 이름 정규화>/config.json`의 `leadSessionId` → ② 팀 이름이 세션 팀(`session-<리드 id 앞 8자>`)이면 팀메이트와 같은 프로젝트 폴더에서 그 앞자리로 시작하는 `<id>.jsonl`이 **정확히 하나**일 때 그 id로 찾는다. 찾으면 `kind: 'subagent'`, `parentNativeId: 리드`(리드의 보조), 못 찾으면 `root`로 두고 화면이 '팀메이트' 태그를 단다. 연결은 파싱 캐시 뒤에서 매 패스 다시 하며(설정 파일 mtime+size, 폴더 mtime으로 캐시), 전체 수집·hot path 공통(`readSession`). 첫 user 턴의 `<teammate-message teammate_id=… color=… summary=…>…</teammate-message>` 겉봉은 `cleanPrompt`가 벗겨 안의 글만 남긴다(닫는 태그 없이 잘린 제목도).
 - OpenClaw는 agent namespace와 DB의 current session ID 또는 JSONL header ID를 사용한다. DB parent key는 정확한 sessionKey로 연결하고 같은 agent의 native ID로도 해석한다. 다른 페르소나의 부모는 정확하고 유일한 key 매치일 때만 연결한다.
 - 원본 ID를 얻지 못한 일반 fallback은 `identity.evidence`에 남긴다. 부분 Codex 파일에서 owner header를 놓치면 파일 ID로 새 동료를 만들지 않고 오류로 격리한다.
 - 명시적 fork/자식은 별도 세션이다. 비슷한 제목·같은 cwd·같은 브랜치는 병합 근거가 아니다.
@@ -68,6 +72,14 @@ Claude-Mem, AgentPet은 비교 조사만 했고 현재 수집 런타임에 포�
 | OpenClaw | `$OPENCLAW_STATE_DIR/agents`, 기본 `~/.openclaw/agents`; agent별 sessions와 `agent/openclaw-agent.sqlite` | JSONL이 이관되어 없어도 DB 수집. DB는 최근 180개 + 초기 12개 표본. seq 외 rewrite watermark로 변경 감지 |
 
 기본 수집 상한은 공급자당 최근 120개, 설정 범위는 60~300개다. JSONL은 파일 mtime 기준 탐색 후보에도 상한을 적용하므로 모든 대화 조각을 영구 보장하는 것이 아니다. DB/파일 결과는 병합 후 다시 상한을 적용한다. 오류 보존 경로에서 마지막 정상 기록을 추가로 남길 수 있다.
+
+### 외장 디스크·연결 폴더의 JSONL 탐색
+
+공통 `discover`는 설정된 공급자 루트 아래의 심볼릭 링크(디렉터리·JSONL 파일)를 따라간다. Codex가 외장 디스크로 옮긴 과거 월 폴더에서 대화를 재개하는 경우도 생성 날짜가 아니라 파일 수정 시각으로 최근 후보에 포함한다. Codex 전용 파서 추가나 원본 로그 복사는 필요하지 않다.
+
+실제 경로로 디렉터리 순환과 동일 파일 별칭을 중복 제거하고, 너비 우선 탐색으로 깊은 별칭이 얕은 경로의 탐색 예산을 먼저 소비하지 않게 한다. 기존 탐색 깊이·제외 디렉터리·최근 파일 수 상한은 유지한다. 전달하는 `sourcePath`는 공급자 루트에서 접근한 논리 경로여서 Claude subagent 경로 의미를 보존한다. 끊긴 링크·회전 중 파일은 다른 경로 탐색을 중단하지 않지만, 루트 자체를 읽지 못하면 공급자 오류로 처리한다. 연결이 끊긴 하위 폴더의 지난 관측을 따로 보존하는 정책은 이번 변경에 포함하지 않는다.
+
+`tests/linked-sessions.test.ts`는 외부 월 폴더, 별칭·순환, 깊이·제외 이름, 끊긴 링크, 파일 별칭과 실제 `OfficeService`의 제목/ID/진행 메시지 갱신을 검증한다. 이 탐색은 자체 구현이며 외부 모듈을 추가로 가져오지 않았다.
 
 일반 JSONL 읽기 예산은 3 MiB head+tail이며 앞 구간은 최대 768 KiB다. **예외로 첫 metadata 한 줄**을 Orca의 10 MiB 레코드 한도까지 복구한다. 열린 파일의 크기를 기준으로 읽고, 진행 중 append/rotation의 반쪽 줄을 완성된 이벤트로 처리하지 않는다. 누락/잘림은 `partial`로 표시한다. 이것은 전체 transcript를 페이지별로 전부 읽는 엔진이 아니다.
 
@@ -142,8 +154,10 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
   - **같은 프로세스 확인**: `waiting`이고 이번 수집 목록에 있는 세션의 기록만 확인한다. PID가 살아 있고 `ps -o lstart=`(UTC·C 로케일)가 `procStart`와 같아야 한다. 확인 결과는 PID·procStart별로 30초 기억하고, 실패한 확인은 기억하지 않는다. 평소 비용은 수집당 폴더 읽기 한 번이다.
   - **최신 확인**: `statusUpdatedAt`(없으면 `updatedAt`) 뒤에 결과·메시지·턴 경계 이벤트가 있으면 지난 기록으로 보고 무시한다.
   - **적용 위치**: `OfficeService.collect`에서 병합·작업 위치 보완 뒤, 저장 직전에 매 수집 적용한다(`applyLiveWait`). 파싱 캐시에는 넣지 않는다: 대기는 transcript가 그대로여도 바뀐다. 적용하면 상태 `call`, 이유(권한 확인/플랜 승인/일반 대기), 현재 턴에서 결과가 없는 마지막 도구 호출을 `request-input`으로 표시하고 revision에 반영한다. 대기가 끝나면 다음 수집에서 overlay가 사라지고 revision이 다시 바뀌어 저장소와 화면이 갱신된다.
-  - **공유**: 읽기·검증 코드는 `server/adapters/claude-live.ts` 하나다. 데스크탑 `desktop/terminals.ts`가 같은 모듈로 세션의 터미널을 찾고, `idle`일 때만 입력한다(`waiting`이면 보낸 글이 승인 응답이 되므로 거절). 서버는 데스크탑 모듈을 import하지 않는다.
+  - **공유**: 읽기·검증 코드는 `server/adapters/claude-live.ts` 하나다. 데스크탑 `desktop/terminals.ts`가 같은 모듈로 세션의 터미널을 찾고, `idle`·`busy`·`shell`일 때, 화면에서 입력창을 확인한 뒤에만 입력한다(작업 중이면 Claude가 대기열에 넣음. `waiting`이면 보낸 글이 승인 응답이 되므로 거절). 서버는 데스크탑 모듈을 import하지 않는다.
 - **소식**: 열린 요청만 '응답 필요' 후보다. 결과·이후 메시지·턴 경계가 기록되거나 대기 overlay가 사라지면 해당 소식을 해결한다. 퇴근 시간보다 오래된 미응답 요청은 관측으로만 기억하고 소식을 만들지 않는다. 그래서 업그레이드 뒤 재파싱해도 지난 플랜 승인은 새 미확인 소식이 되지 않는다.
+- **묻는 내용(`OfficeEvent.request`, #127)**: 답이 아직 없는 입력 요청 이벤트에 질문(`question`)·플랜(`plan`)을 선택 필드로 붙인다(`server/adapters/requests.ts`). `redactStrict()`와 길이 제한(질문 6·선택지 12·질문 글 1000자·플랜 2만 자) 뒤 정본 그대로 저장하고, 잘렸으면 `truncated`를 단다(앱에서 답하지 않음). 읽을 때 자리표시만 현지화한다(`localizeSession`). 답이 기록되면 다음 파싱에서 사라진다. 이벤트 ID·소식 ID·버전·캐시 키는 바뀌지 않는다. **권한 확인의 내용은 저장하지 않는다**: 다른 도구 호출의 입력(명령·파일·주소·MCP 인수)은 어디에도 남기지 않고, 실행 기록 overlay가 그 호출을 `request-input`으로 바꾸면 렌더러가 도구 이름만으로 권한 요청을 보여 준다. 무엇을 실행하는지는 데스크탑 앱이 화면에서 읽는다([터미널](TERMINAL.md#질문플랜권한-확인에-답하기-127)).
+- **가리기(#127)**: 이벤트 글은 예전 `redact()` 그대로다(글이 바뀌면 그 글로 만든 소식의 글·버전이 바뀌어, 읽은 소식이 재시작 뒤 다시 안 읽음으로 돌아온다 — 회귀 테스트로 고정). 새로 생긴 글(열린 요청의 질문·플랜, 권한 확인 화면에서 읽은 명령·경로·주소)만 `redactStrict()`로 더 가린다: `AWS_SECRET_ACCESS_KEY=…`·`*_TOKEN=…`·`*_PASSWORD=…`(숫자만인 값·`$` 변수 제외), `hf_…`·`glpat-…`·`AIza…`·`AKIA…`, `--password x`·`--token=x`, 같은 명령 안의 `mysql … -pSECRET`, `curl`/`wget`의 `-u`/`--user user:pass`, `scheme://user:pass@`. 이벤트 글까지 넓히는 것은 `redaction_version` 이동과 함께 후속으로 남긴다.
 - **Codex 한계**: Codex rollout에는 승인·권한 요청 이벤트가 없다. `request_user_input`만 호출로 보이고, 명령 승인 대기는 보이지 않는다. 근거가 생기기 전에는 추측하지 않는다.
 
 ## JSONL 증분 읽기 (#45)
@@ -156,6 +170,65 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
 - **주기적 재확인**: append로 이어 붙인 창은 guard만 믿고 있으므로, 마지막 전체 읽기 후 10분이 지나면 파일이 그 뒤로 조용해서 stamp(size+mtime)가 그대로여도 `OfficeService.collect`가 전체 경로로 한 번 다시 읽는다(`RecordWindowCache.stale` → `verify`). 이전 창과 새로 읽은 레코드를 비교하는 비용은 이 경로에서만 들고, 일반적인 전체 경로 복귀는 어차피 다시 파싱하므로 비교하지 않는다. 대상은 창 캐시에 있는 append 항목과 확인 전에 예산으로 밀려난 append 항목뿐이다. 다시 읽은 레코드·`partial`이 append로 쌓은 것과 같으면 파싱 캐시를 그대로 쓰고 revision도 바꾸지 않는다. 다르면(`drifted`) 다시 파싱하고 revision 키에 확인 표시를 더해 저장소와 화면이 갱신되게 한다. 그 사이 최대 10분은 guard 밖의 같은 크기 덮어쓰기를 놓칠 수 있다. 원본 JSONL은 append-only라는 전제이며, 그 밖의 변경은 위 조건이 전체 경로로 돌린다.
 - **mtime 해상도**: 전체 경로로만 읽은 파일은 이전처럼 stamp가 같으면 다시 읽지 않는다. mtime 해상도가 거친 파일시스템에서 같은 크기로 다시 쓰면 다음 변경 전까지 반영되지 않는 기존 한계는 그대로다.
 - **예산 (#64)**: 최근 15분 안에 쓰인 파일(일하는 세션)만 창을 남긴다. 그보다 조용한 파일은 다음 변경 때 전체로 읽는다. 창은 매 수집 끝의 `sweep`에서 15분 넘게 읽히지 않으면 버린다. 남긴 원문 줄 바이트 합계는 16 MiB까지다(파싱된 객체의 실제 heap은 더 크다). 넘으면 가장 오래 읽지 않은 파일부터 버리고, 버린 파일은 다음에 전체 경로로 읽는다. 수집마다 공급자별로 이번에 발견한 파일만 남기고(`prune`), 꺼진 공급자의 항목은 비운다. 파싱 캐시(`OfficeService.cache`)도 같은 기준으로 정리하고 4000개 상한을 둔다. OpenClaw DB 캐시는 이번 수집에서 읽지 않은 노드 키를 버린다. revision은 같은 값으로 다시 계산되므로 축출은 의미를 바꾸지 않는다.
-- **metadata 캐시**: Codex `session_index.jsonl`·가장 최신 `state_N.sqlite`·`-wal`의 mtime+size와 선택된 DB 이름이 같으면 지난 결과를 그대로 쓴다. DB나 존재하는 index 읽기가 실패한 결과는 기억하지 않는다. Claude는 프로젝트 목록은 매번 읽고 `sessions-index.json`을 파일별 mtime+size로, subagent `.meta.json`은 mtime+size로 기억한다(실제로 없는 경우는 기억하고, 있는데 읽기 실패한 경우는 다음에 다시 읽는다). 테스트는 `resetCodexMetadataCache`/`resetClaudeMetadataCache`로 초기화한다.
+- **metadata 캐시**: Codex `session_index.jsonl`·가장 최신 `state_N.sqlite`·`-wal`의 mtime+size와 선택된 DB 이름이 같으면 지난 결과를 그대로 쓴다. DB나 존재하는 index 읽기가 실패한 결과는 기억하지 않는다. Claude는 프로젝트 목록은 매번 읽고 `sessions-index.json`을 파일별 mtime+size로, subagent `.meta.json`과 팀 설정 `teams/<팀>/config.json`은 mtime+size로, 팀메이트의 리드를 찾는 프로젝트 폴더 목록은 폴더 mtime으로 기억한다(실제로 없는 경우는 기억하고, 있는데 읽기 실패한 경우는 다음에 다시 읽는다). 테스트는 `resetCodexMetadataCache`/`resetClaudeMetadataCache`로 초기화한다.
 
 검증은 `tests/record-window.test.ts`(단계별 append·3 MiB 경계·미완결 줄·UTF-8 분할·CRLF·무작위 분할이 `readRecords`와 같음, 축소/교체/guard/10분 대조/큰 첫 줄, 예산·prune)와 `tests/incremental-collect.test.ts`(서비스 append 수집과 revision, metadata 캐시)다.
+
+## 일하는 동료 빠른 갱신 (#77)
+
+5초 전체 수집은 그대로 정본·복구 경로다. 그 사이 일하는 동료만 `OfficeService`의 hot path가 1초 안에(파일 감시 힌트가 있으면 1초 미만) 다시 읽는다. 결과 계약: **같은 바이트에 대해 전체 수집이 만들 세션과 같은 세션(revision 포함)** 을 저장한다.
+
+- **파일 단계 공유**: 파일 하나를 세션으로 만드는 단계(파싱 캐시 stamp `office-v11:size:mtime` → `RecordWindowCache` 증분 읽기 → `parseRecords` → metadata 이름 → Claude subagent sidecar)는 `readSession` 하나다. 전체 수집과 hot path가 같은 `cache`·`windows`를 쓰므로 한 파일을 두 번 파싱하지 않는다. hot path가 먼저 읽은 파일은 다음 전체 수집에서 캐시 적중이고 revision도 같아 저장소 쓰기가 없다.
+- **직전 값 재사용**: 전체 수집이 저장 직전 세션마다 원본 파일 목록(병합 순서), metadata 맵, 작업 위치 입력(`provider·project·cwd·workingLocation.path`)과 그때 정한 workspace를 기억한다(`KnownSession`). hot path는 탐색·Codex/Claude metadata 읽기·Git을 하지 않는다. 같은 세션의 조각 파일이 여럿이면 전부 다시 단계에 넣어(바뀌지 않은 건 캐시) `mergeSessions`로 합친다. 작업 위치 입력이 바뀌었거나, 파일이 사라졌거나, 다른 ID가 나오면 그 세션은 건드리지 않고 전체 수집에 맡긴다. workspace는 같은 입력이면 같은 값이고(`enrichWorkspaces`와 같은 규칙으로 `locationSource`만 현재 값), Git 관측의 갱신은 다음 전체 수집이 반영한다.
+- **대상(hot 집합)**: Claude·Codex·OpenClaw **JSONL** 세션 중 시간 정책을 적용한 상태가 work/think/call이거나, 최종 응답(`done`) 뒤 10초 이내인 세션. OpenClaw DB에서도 나오는 세션은 제외한다(파일만으로 다시 만들 수 없음). 최근 활동순 최대 8개, 나머지는 5초 주기 그대로. 전체 수집 뒤와 hot 처리 뒤마다 다시 고르고, 빠지면 감시를 닫는다.
+- **Claude 실행 기록 승격**: hot pass마다 `<claude config>/sessions/*.json`을 한 번 읽는다. hot이 아닌 알려진 Claude 세션의 기록이 `busy`/`waiting`이면 기존 검증(`isLiveProcess`, PID·procStart 30초 메모)을 거쳐 hot으로 올린다(새 요청 도착이 transcript보다 먼저 보임). 승격은 그 세션의 기록이 busy/waiting인 동안 유지된다. hot Claude 세션에는 같은 읽기로 권한 대기 overlay(`applyLiveWait`)를 적용하고, 대기 기록이 바뀌면(`liveWaitSignature`) transcript가 그대로여도 다시 저장한다. ps 호출은 기존 메모를 넘지 않는다.
+- **주기와 경합**: 1초 타이머가 hot 파일만 stat해 파싱 캐시 stamp와 비교한다. 바뀐 세션들은 한 번에 처리해 공급자별 `store.stage(sessions, provider)`로 **메모리에만** 받아들이고(아래 '디스크 쓰기는 전체 수집에서') 그 세션들의 변경분만 patch로 보낸다(아래). 변경을 받아들이는 pass는 최소 1초 간격이라 세션별 최소 간격도 1초다. 전체 수집이 진행 중이면 hot pass는 아무것도 하지 않고, hot pass가 진행 중이면 전체 수집이 그 끝을 기다린 뒤 시작한다. 전체 수집은 아무것도 건너뛰지 않는다.
+- **변경분만 보내기**: hot pass는 사무실 전체를 다시 만들지 않는다(`emitChanged`). 바뀐 세션의 행만 하나씩 읽어 같은 규칙으로 꾸미고(설정·상태 파생·좌석·`snapshotEvents`), 게시된 동료들에 대해 붙임(`attachSessions`)과 현지화를 한다. 소식은 마지막 전체 목록에서 그 세션들 것만 다시 읽어 합치고, 실어 보낼 소식(`residentNotices`)과 `noticeStats`를 그 목록에서 다시 고른다. 순서는 id만 읽는 쿼리로 확인한다. 게시된 index와 비교해 patch를 만들고 `this.sent`(index·snapshot)·patch 기록을 전체 emit과 같은 방식으로 이어 가므로, 다음 전체 emit의 diff와 웹 폴러가 그대로 동작한다. 바뀐 세션이 다른 동료의 자리를 움직일 수 있으면(구역·핀·보관·관계·actor·background 여부, 붙임이나 책상이 바뀜, 붙지 않은 도우미가 매달림, 새로 보이거나 사라짐, 언어 변경) 전체 `emitSnapshot`으로 돌아간다. 다른 동료의 시간 경과에 따른 변화는 지금처럼 다음 전체 수집이 반영한다. 테스트가 hot patch를 직전 게시본에 적용한 결과와 직후 전체 재구성이 같음을 확인한다.
+- **디스크 쓰기는 전체 수집에서**: hot pass는 SQLite에 쓰지 않는다. `OfficeStore.stage`가 `upsert`와 같은 규칙(저장 형태 `storedForm`: 사용량 ledger 합산·작업 위치 유지·`taskStartedAt`, 소식 `ingestNotices`: 후보·ID·버전·receipt·호출 해결·cursor)을 메모리 위에서 그대로 돌린다. 소식·관측 버전·cursor·ledger는 디스크 내용 위에 겹친 사본에 쓰고, 세션 행은 디스크가 담을 형태(JSON 왕복) 그대로 둔다. 이 store의 모든 읽기(사무실 목록·순서·한 행, `get`/`detail`/검색/인수인계, 소식 목록·페이지·전체 읽음, `storedRecords`)가 겹친 내용을 본다. 그래서 열린 작업 카드의 `detail()`도 곧바로 새 내용을 받는다. 사람이 그사이 소식을 읽거나 숨기면(읽음·숨김·안 읽음·봄, 분류 전체 읽음) 그 receipt는 **곧바로 디스크에** 쓰고 겹친 사본도 같이 고친다. 그래서 다음 쓰기가 같은 소식을 쓰고, 그 전에 앱이 꺼져도 receipt는 남는다. 다음 전체 수집의 `upsert`(그 공급자)가 먼저 겹친 소식·관측·cursor·ledger를 **보인 그대로** 쓰고, 이어서 평소처럼 세션을 받아들인다(이때 이전 값은 겹친 행 기준이라 저장 형태가 같다). 소식은 이미 관측된 버전이라 새로 생기지 않으므로 중복·읽음 되돌림·미확인 수 깜빡임이 없다. 수집기가 닫힐 때(`close`)도 겹친 내용을 쓴다(공급자별로 따로, 하나가 실패해도 나머지는 쓴다). 데스크탑 종료는 `before-quit`에서 한 번 멈추고 worker에 stop을 보내 `OfficeService.shutdown()`(새 pass 거절 → 진행 중인 전체 수집·hot pass가 끝날 때까지 기다림 → 닫으며 쓰기)이 끝나거나 3초가 지나면 worker를 끝내고 종료한다. 개발 서버(`server/dev.ts`)도 SIGINT/SIGTERM에서 같은 순서다. 갑자기 죽으면 최대 5초치 겹친 내용이 사라질 수 있지만(receipt는 이미 디스크에 있음), 세션·소식은 다음 실행의 전체 수집이 JSONL에서 다시 만든다.
+- **순서**: 세션 목록 순서는 `updated_at` 내림차순, 같으면 id 내림차순이다(디스크 쿼리와 메모리 정렬이 같은 전체 순서를 쓰므로 hot에서 보인 순서가 디스크에 쓴 뒤에도 그대로다).
+- **확인 시각**: 1분마다 나가는 확인 시각(`lastSync`·connector)은 전체 office를 게시할 때만 기준을 갱신한다(`healthAt`). hot patch가 계속 나가도 화면의 마지막 동기화 시각은 1분마다 움직인다.
+- **메모리**: `emitChanged`가 합칠 기준으로 마지막 전체 소식 목록(`notices.all`)을 들고 있다. 전체 emit이 어차피 만드는 같은 객체들이라 크기는 소식 표 하나(한 번의 `officeView`) 정도다. 겹친 세션은 디스크 소식 사본을 겹쳐 있는 동안만(최대 5초) 가진다.
+- **지연되는 읽기**: 같은 store를 쓰지 않는 읽기, 즉 MCP 서버(별도 프로세스의 읽기 전용 연결)와 다른 수집기는 디스크만 보므로 hot 변경을 최대 5초 늦게 본다. `identities`(터미널 찾기)는 디스크의 정체성 필드만 읽으며 hot pass가 이를 바꾸지 않는다.
+- **소식 받아들이기 비용**: `ingestNotices`는 세션의 관측 버전을 한 번에 읽고, 버전이 바뀐 이벤트만 `notice_observed`에 쓴다(전에는 후보마다 읽고 매번 같은 값을 다시 썼다). 단계 분류용 기존 소식 확인도 후보마다가 아니라 한 쿼리다. 결과 DB 상태는 같다.
+- **fs.watch 힌트**: hot 파일에만 `fs.watch`(persistent:false)를 건다. 이벤트가 오면 150ms 모아(다음 허용 시각보다 이르지 않게) 바로 hot pass를 돈다. 감시 시작 실패·`error` 이벤트는 그 파일을 감시 없이(1초 stat) 두고, hot에서 빠질 때 다시 시도할 수 있게 잊는다. 놓친 이벤트는 1초 stat과 5초 전체 수집이 복구한다. `stop()`은 타이머·힌트·감시를 모두 닫는다.
+- **불변**: 저장 기록은 canonical, 소식 ID·버전·이벤트 ID는 그대로다. 일시정지·공급자 끄기에서는 hot 집합이 비워진다.
+
+검증은 `tests/hot-path.test.ts`(append가 전체 수집 없이 다음 tick에 저장·patch, 전체 수집·새 수집기와 같은 revision, 승격·유예·강등·상한 8, 실행 기록 승격과 권한 대기, 전체 수집과 겹치지 않음·한 번만 읽음, 감시 힌트와 감시 실패 시 stat 폴백, `stop()` 뒤 타이머·감시 없음, 부분 upsert, 실행 기록 캐시, hot patch를 직전 게시본에 적용한 결과와 전체 재구성의 동일성(부모·도우미·최종 응답·동시 변경), 전체 재구성으로 되돌아가는 경우, 실어 보내는 소식에서 밀려난 소식 제거, hot pass는 디스크에 쓰지 않고 다음 전체 수집이 보인 그대로 씀, 그사이 읽은 소식이 한 번만·읽은 채로 남음, 바로 쓴 경우와 같은 소식, 닫을 때 기록)다.
+
+
+## 대량 기록의 조회·상주 경계 (#296)
+
+`notice_meta`/`notice_generation`은 `notices`에서 SQL 트리거로 유지하는 파생 자료다. 정본은 소식 JSON과 receipt이며, 읽음/접기 이관 규칙은 바뀌지 않는다. `officeView`와 hot patch는 전체 notice 본문을 불러오지 않는다. UI cursor 페이지와 정확한 count는 DB에서 읽고, 세션별 최신 소식 cache는 generation/현재 staged receipt/시간으로 무효화한다. 구버전 writer가 저장한 변경도 같은 트리거를 거친다.
+
+hot overlay에는 현재 입력 window에서 확인하는 관측 버전과 실제 수정한 notice·usage만 남긴다. 기존 DB의 모든 버전·비용 행을 복제하지 않는다. 대기 항목이 예산을 넘으면 다음 stage 전에 checkpoint하며, 실패하면 기존 데이터를 보존하고 추가 stage를 거절한다. 평상시 5초 전체 수집·즉시 receipt 저장·종료 flush 계약은 같다. 비용 합산은 정렬된 DB iterator와 staged 변경의 병합이다.
+
+대화 `detail`은 source event와 보관된 notice excerpt를 합친 작은 페이지를 준다. 원본 밖의 과거 원문 전체를 읽는 기능은 아니다. 오래된 북마크의 `reach`는 해당 위치 주변을 바로 조회하고 `newerEvents`로 최신 복귀를 제공한다. 캐시·UI의 구체적인 예산과 성능 검증은 [경량화 설계](PERFORMANCE-DESIGN.md#대량-기록의-상주-예산--2026-10-29-296)를 따른다.
+
+## 세션 산출물 (#350, office-v12)
+
+세션이 **새로 만든** 문서·페이지·이미지와 Claude Artifact 링크를 기록에서만 찾는다. 폴더를 훑지 않고, 파일 내용은 미리보기를 누를 때만 읽는다. 제품 규칙은 [기능 정책 · 산출물](../golden/FEATURE-POLICY.md#산출물-350)을 따른다.
+
+- **어댑터(`server/adapters/outputs.ts` `OutputTracker`)**: `parseRecords`가 도구 호출·결과·답을 넘기고, 에이전트마다 다른 표현은 도구 이름과 레코드 모양으로 읽는다(`working-location.ts`와 같은 방식, 호출부에 공급자 분기 없음).
+  - Claude `Write`: `tool_use.input.file_path`를 `tool_use.id`로 기다렸다가, 같은 id의 `tool_result`가 `File created successfully at: <path>`이거나 레코드의 `toolUseResult.type`이 `create`일 때만 만든 파일로 본다. `The file <path> has been updated successfully.`(`toolUseResult.type: update`)는 원래 있던 파일이다. `is_error`(거절·실패)나 결과가 없는 호출은 아무것도 만들지 않은 것이다. 이 문자열·필드는 Claude Code 2.1.319 번들의 FileWriteTool 결과 생성부(`case "create"` / `case "update"`)에서 확인했다.
+  - Codex `apply_patch`(`function_call`의 JSON `{"input": …}` 또는 `custom_tool_call`의 패치 원문): `*** Add File: <path>`만, 같은 `call_id`의 출력이 `Success. Updated the following files`이거나 JSON `metadata.exit_code === 0`일 때 센다. 상대 경로는 그때의 `cwd`로 푼다. rollout에 `event_msg` `patch_apply_end`(`success: true`)가 있으면 그 `changes`의 `type: add`도 읽는다. 코드 모드(`exec`·`functions.exec` 안의 `tools.apply_patch`)는 `wrappedLocations`와 같은 규칙(`wrappedPatches`: 함수·조건·반복 밖의 리터럴 패치만)으로 `*** Add File:`을 읽되, 스크립트의 종료 코드는 패치의 성공을 말하지 않으므로 그 호출의 출력(JSON이면 `output`)에 `Success. Updated the following files`와 그 파일의 `A <경로>` 줄(쓴 그대로 또는 풀린 절대경로)이 함께 있을 때만 센다. 그 밖에는 건너뛴다.
+  - 답(assistant 텍스트, commentary 포함): `open <절대경로|~/경로>`(따옴표·`\ `·`-a 앱`·문장 끝 문장부호·한국어 조사 처리)와 로컬 파일 Markdown 링크(`[x](/경로)`, `file://`)를 **언급** 후보로, `claude.ai/…/artifact(s)/<id>` 링크를 Artifact로 낸다. Claude `Artifact` 도구 결과의 링크도 읽는다.
+  - 허용 확장자·제외 폴더·설정 JSON 판단은 `outputFile`(공유 상수 `src/shared/outputs.ts`). 세션 `cwd` 아래 파일은 그 아래 경로만, 그 밖은 전체 경로의 숨김·제외 폴더를 본다.
+  - 한 파싱의 후보는 최근 200개까지 `Session.outputs`(어댑터 전용, 저장 경계에서 제거)에 담고, `mergeSessions`가 조각을 합친다(도구로 만든 기록이 언급보다 우선).
+- **저장(`server/outputs.ts` `OutputLog`, 앱 DB `session_outputs`)**: `upsert`가 세션의 소식을 받아들인 직후 아직 없는 후보만 `INSERT OR IGNORE`한다(`(session_id, key)` 유일). 큰 기록의 앞/뒤 창, 증분 읽기, 재시작을 거쳐도 이미 찾은 산출물은 남는다. 언급 후보만 그 경로를 한 번 stat해 **생성 시각(birthtime)이 대화 시작 2분 전 ~ 언급 2분 뒤**일 때 남기고 그 생성 시각을 만든 시각으로 쓴다. 없는 파일은 '기다리는 언급'(최대 500개, 처음 언급 뒤 30분)으로 두고 `upsert`마다 세션이 바뀌지 않아도 15초에 한 번까지 다시 stat한다(`OutputLog.retry`, 바뀌지 않은 세션을 건너뛰는 지름길보다 앞). 범위 밖·생성 시각을 모르는 파일은 메모리에 거절로 기억해(최대 5000) 바쁜 세션을 매번 stat하지 않는다. 행에는 실제 경로와 그때의 도구·프로젝트·제목을 남기고 최근 5000개를 유지한다. 추가가 있으면 `settings.outputs_revision`을 올려 snapshot `outputStamp`로 목록이 다시 읽힌다. hot path는 DB에 쓰지 않는다. 다만 `storedForm`이 행에서 후보를 빼므로 hot path가 본 후보는 staged 상태(`Staged.outputs`)에 모아 두고, 다음 `upsert`(또는 닫을 때 `persistStaged`)의 `flushStaged`가 기록한다. 그사이 기록 창이 넘어가 전체 수집에서 근거가 사라져도 잃지 않는다.
+- **조회(RPC, zod 검증)**: `outputs(query)`는 설정이 보이는 도구·프로젝트만, 최근순 페이지(`before`·`limit` ≤ 200·`text`·`sessionIds`)로 **가린(redact) 경로·이름·폴더**를 주고, 그 페이지의 파일만 stat해 `exists`를 붙인다. `outputTarget(id)`(실제 경로)와 `outputPreview(id)`(md/html, 실제 경로의 확장자로 판단, 최대 1 MiB, 가린 뒤)는 데스크탑 main·읽기 창용이다. 데스크탑은 페이지의 `office:call`에서 `outputTarget`을 거절하고, 개발 HTTP 서버(`server/dev.ts`)는 둘 다 거절한다. 원격 사무실 세션의 `outputs`는 빈 페이지다.
+- **파서 의미 변경**: 파싱 캐시 stamp를 `office-v11` → `office-v12`로 올렸다(서비스 JSONL·hot path·OpenClaw DB 캐시). 업그레이드 후 첫 수집에서 모든 기록을 한 번 다시 파싱해 산출물 후보를 채운다.
+
+검증은 `tests/outputs.test.ts`(Write 생성/수정/거절/결과 없음, `toolUseResult`, 허용 확장자·설정 JSON·제외 폴더·숨김 worktree, apply_patch 추가/수정/실패·`patch_apply_end`, `open`·Markdown 링크·Artifact 제목, 조각 병합, 저장 페이지·`before`·검색·설정 숨김·stamp, redact, 언급의 생성 시각 판정과 거절 기억, RPC zod 거절·미기록 id·미리보기 읽기와 경계·심볼릭 링크)와 `tests/ui/outputs.spec.ts`(탭 위치·묶음·행동·페이지·검색·화면 숨기기·빈 상태·웹 미리보기·영어·카드 구역·읽기 창 md/html 샌드박스)다.
+
+## Claude 로컬 명령 (#359, office-v13)
+
+`/usage`·`/cost`·`/model`처럼 Claude Code 안에서 돌고 모델에게 가지 않는 명령도 transcript에 user 역할로 남는다. 예전에는 이를 사람의 요청으로 읽어 상태가 '생각 중'(응답 준비)이 되고, 마크업이 든 '내 요청' 소식이 생겼다.
+
+- **기록 모양**(Claude Code 2.1.322 번들의 `kO`·`I4`·`R_`·`gTe`에서 확인, 실제 기록은 읽지 않음): 로컬 명령은 `<command-name>/usage</command-name><command-message>…<command-args>…`로 **시작**하는 user 레코드다. 그 출력은 예전 버전은 `<local-command-stdout>`/`<local-command-stderr>` user 레코드, 새 버전은 `type: system`, `subtype: local_command`, `content: "<local-command-stdout>…"` 레코드다. 창으로 뜨는 명령은 명령 줄도 같은 system 레코드로 남는다. 그 앞의 `<local-command-caveat>`는 `isMeta`다. `!` 셸 명령은 `<bash-input>` + `<bash-stdout>`/`<bash-stderr>`다.
+- **모델이 일하는 명령은 다르다**: 사용자 정의 명령·스킬은 `<command-message>…</command-message><command-name>/review</command-name>`처럼 `<command-message>`로 시작하고, 펼친 프롬프트가 `isMeta` user 레코드로 이어진다. 이것은 지금처럼 요청이다(상태 '생각 중').
+- **정규화(`localCommand`, `parseRecords`)**: 로컬 명령은 요청을 열지 않는다. user 이벤트·제목·요청 소식을 만들지 않고, 상태·이유·마지막 활동 시각(`updatedAt`)·작업 시작(턴 경계)을 바꾸지 않는다. 대화에는 `lifecycle` 이벤트(턴 경계 필드 없음) 한 줄 `/usage 실행`(영어 `Ran /usage`, 읽을 때 번역)만 남고, 다른 lifecycle처럼 작업 기록 묶음에 접힌다. 출력·caveat는 보이지 않는다. 명령 줄은 공백을 접고 120자로 자르며 `redact`를 거친다.
+- **`/compact`**: 요약 작업은 기록되기 전에 끝난다. `compact_boundary`, `isCompactSummary` 요약(모델이 쓴 글이라 요청이 아님), caveat, `/compact` 명령, 출력이 한꺼번에 남으므로 상태는 그대로이고 `/compact 실행` 한 줄이 남는다. 자동 압축 뒤 이어지는 답은 지금처럼 답으로 상태를 정한다.
+- **한계**: 바쁠 때 대기열(`queued_command`)에 들어간 `/명령` 글은 명령인지 알 수 없어 지금처럼 요청으로 본다. 출력 뒤에 모델을 부르는 로컬 명령(번들의 `query` 결과)은 답이 기록될 때부터 '생각 중'이 된다.
+- **파서 의미 변경**: 파싱 캐시 stamp를 `office-v12` → `office-v13`으로 올렸다(서비스 JSONL·hot path·OpenClaw DB 캐시).
+
+검증은 `tests/local-commands.test.ts`(`/usage` 예전·새 모양, `/cost`·`/model` 뒤 쉬는 상태 유지와 영어 줄, 로컬 명령만 있는 세션, 뒤이은 진짜 요청, 턴 중간의 명령, 프롬프트로 펼쳐지는 명령, `/compact`·압축 요약, `!` 셸 명령)다.

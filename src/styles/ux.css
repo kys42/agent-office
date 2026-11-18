@@ -1,53 +1,11 @@
-/* ───────────────────────── UX layer: triage, now card, palette, keys ───────────────────────── */
+/* ───────────────────────── UX layer: triage, palette, keys ───────────────────────── */
 
-/* Right panel home tabs (colleagues ↔ news) */
-.panel-tabs {
+/* The right panel's title bar (colleagues) */
+.panel-bar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-}
-.panel-tabs .panel-switch {
-  display: inline-flex;
-  padding: 3px;
-  gap: 2px;
-  border-radius: 10px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-}
-.panel-tabs .panel-switch button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 11px;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 560;
-  color: var(--text-3);
-}
-.panel-tabs .panel-switch button:hover {
-  color: var(--text-2);
-}
-.panel-tabs .panel-switch button[aria-pressed='true'] {
-  color: var(--text);
-  background: var(--bg-4);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-}
-.panel-tabs .panel-switch button b {
-  min-width: 18px;
-  padding: 0 5px;
-  border-radius: 5px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 16px;
-  text-align: center;
-  color: var(--accent-ink);
-  background: var(--accent);
-}
-.news-inbox > .panel-tabs {
-  padding: 12px 10px 0 16px;
 }
 
 /* Summary tiles are now jump links into the grouped list */
@@ -112,7 +70,7 @@
   background: var(--st-work);
 }
 .group-head b {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   font-weight: 650;
   color: var(--text-2);
 }
@@ -121,13 +79,13 @@
 }
 .group-head em {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   font-style: normal;
   color: var(--text-4);
 }
 .group-head small {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-4);
   white-space: nowrap;
   overflow: hidden;
@@ -229,108 +187,11 @@
   animation: ping-out 1.625s ease-out infinite;
 }
 
-/* Now card — the top of a colleague's card */
-.now-card {
-  margin-bottom: 14px;
-  padding: 12px 13px 13px;
-  border-radius: 13px;
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-}
-.now-card.tone-attention {
-  background:
-    linear-gradient(180deg, rgba(255, 122, 138, 0.12), rgba(255, 122, 138, 0.03) 70%), var(--bg-2);
-  border-color: rgba(255, 122, 138, 0.32);
-}
-.now-card.tone-result {
-  background:
-    linear-gradient(180deg, rgba(120, 182, 255, 0.12), rgba(120, 182, 255, 0.02) 70%), var(--bg-2);
-  border-color: rgba(120, 182, 255, 0.3);
-}
-.now-card.tone-working {
-  background: linear-gradient(180deg, rgba(95, 214, 155, 0.09), transparent 70%), var(--bg-2);
-  border-color: rgba(95, 214, 155, 0.24);
-}
-.now-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-3);
-}
-.now-title b {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--text);
-}
-.now-title time {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-4);
-}
-.tone-attention .now-title svg {
-  color: var(--st-call);
-}
-.tone-result .now-title svg {
-  color: var(--st-done);
-}
-.tone-working .now-title svg {
-  color: var(--st-work);
-}
 .now-spin {
   animation: spin 2.375s linear infinite;
 }
 .reduce-motion .now-spin {
   animation: none;
-}
-.now-card .progress-summary {
-  margin: 8px 0 0;
-  padding: 0;
-  background: none;
-  border: 0;
-}
-.now-card .progress-summary-label {
-  display: none;
-}
-.now-card .progress-summary p {
-  margin-top: 0;
-}
-.now-result {
-  margin-top: 8px;
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 6;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.now-result.expanded {
-  display: block;
-}
-.now-more {
-  margin-top: 4px;
-  font-size: 11px;
-  font-weight: 560;
-  color: var(--accent);
-}
-.now-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 11px;
-}
-.now-actions .button {
-  height: 30px;
-  font-size: 12px;
-}
-.now-note {
-  display: block;
-  margin-top: 8px;
-  font-size: 10.5px;
-  line-height: 1.5;
-  color: var(--text-4);
 }
 
 /* Away digest */
@@ -440,7 +301,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  font-size: 15px;
+  font-size: calc(15px * var(--read-scale));
   color: var(--text);
 }
 .palette-list {
@@ -451,7 +312,7 @@
 }
 .palette-section h3 {
   padding: 10px 10px 5px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-4);
@@ -476,14 +337,14 @@
   flex-direction: column;
 }
 .palette-item b {
-  font-size: 13px;
+  font-size: calc(13px * var(--read-scale));
   font-weight: 560;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .palette-item small {
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
   overflow: hidden;
   white-space: nowrap;
@@ -491,7 +352,7 @@
 }
 .palette-item > em {
   flex-shrink: 0;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   font-style: normal;
   font-weight: 600;
 }
@@ -527,7 +388,7 @@
   gap: 16px;
   padding: 9px 16px;
   border-top: 1px solid var(--line);
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-4);
 }
 .palette-foot span {
@@ -595,30 +456,7 @@
   }
 }
 
-/* The now card is pinned above the tabs so it survives auto-scroll to the latest message. */
-.inspector-now {
-  flex-shrink: 0;
-  padding: 0 16px;
-}
-.inspector-now .now-card {
-  margin-bottom: 12px;
-  padding: 10px 12px 11px;
-}
-.inspector-now .now-result,
-.inspector-now .progress-summary p {
-  -webkit-line-clamp: 3;
-}
-.inspector-now .now-result.expanded {
-  max-height: 200px;
-  overflow-y: auto;
-}
-.inspector-now .now-actions {
-  margin-top: 9px;
-}
-.inspector-now .now-note {
-  margin-top: 6px;
-}
-/* Follow-up typed into the live terminal, under the now card */
+/* Follow-up typed into the live terminal */
 .terminal-send {
   margin: -4px 0 12px;
   padding: 8px;
@@ -631,7 +469,7 @@
   min-height: 52px;
   max-height: 160px;
   resize: vertical;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--read-scale));
   line-height: 1.5;
 }
 .terminal-send-bar {
@@ -670,91 +508,283 @@
   margin: -4px 0 12px;
   line-height: 1.5;
 }
+/* Images attached in a composer (card and bubble): thumbnails with a remove button each. */
+.composer-images {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.composer-image-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.composer-image {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 0.5px var(--line-3);
+  color: var(--text-3);
+}
+.composer-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.composer-image-hidden {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+.composer-image-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+}
+.composer-image-remove:hover,
+.composer-image-remove:focus-visible {
+  background: rgba(0, 0, 0, 0.85);
+}
+.composer-images-note,
+.composer-images-error {
+  font-size: calc(10.5px * var(--read-scale));
+  line-height: 1.4;
+  color: var(--text-4);
+}
+.composer-images-error {
+  color: var(--st-call);
+}
+.composer-attach {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-3);
+}
+.composer-attach:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-3);
+}
+.composer-attach:disabled {
+  opacity: 0.45;
+}
+.terminal-send-bar .composer-attach {
+  margin-left: auto;
+}
+.terminal-send-bar .composer-attach + .button {
+  margin-left: 0;
+}
+/* A sent message's images, while it waits for the record. */
+.message-pending-images {
+  font-size: 0.9em;
+  opacity: 0.75;
+}
+/* Dragging files over a composer. */
+.composer-drop {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 2px;
+}
+/* The agent's composer already holds text: shown before anything is typed (card and bubble). */
+.draft-confirm {
+  display: grid;
+  gap: 5px;
+  margin-top: 7px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  font-size: calc(11.5px * var(--read-scale));
+  line-height: 1.45;
+  color: var(--text);
+}
+.draft-confirm small {
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--text-3);
+}
+.draft-confirm-text {
+  margin: 0;
+  max-height: 96px;
+  overflow: auto;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--read-scale));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.draft-confirm-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.draft-confirm-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+.draft-confirm-bar .draft-confirm-clear {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.draft-confirm-bar button:disabled {
+  opacity: 0.5;
+}
+/* Text sitting in the colleague's terminal input box, typed there and not sent (work card). */
+.draft-preview {
+  display: grid;
+  gap: 5px;
+  padding: 7px 9px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
+  border: 1px dashed var(--line-3);
+  font-family: var(--font-read);
+  font-size: calc(11.5px * var(--read-scale));
+  line-height: 1.45;
+  color: var(--text);
+}
+/* The agent's own suggestion (nobody typed it): marked apart from a draft, its text faint as in
+   the terminal. */
+.draft-preview.is-suggestion {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line-3));
+}
+.draft-preview.is-suggestion .draft-preview-head {
+  color: var(--accent);
+}
+.draft-preview.is-suggestion .draft-preview-text {
+  color: var(--text-2);
+}
+.draft-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-3);
+}
+.draft-preview-head strong {
+  font-size: calc(11px * var(--read-scale));
+  font-weight: 600;
+  color: var(--text-2);
+}
+.draft-preview-head small {
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: calc(10px * var(--read-scale));
+  color: var(--text-4);
+}
+.draft-preview small {
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--text-3);
+}
+.draft-preview-text {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--read-scale));
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.draft-preview-text.is-clamped {
+  /* Three rows, fading out: [Show all] opens the rest. */
+  max-height: calc(3 * 1.45em + 10px);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.draft-preview .draft-preview-more {
+  justify-self: start;
+  padding: 0 2px;
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--accent);
+  background: none;
+}
+.draft-preview-notice,
+.draft-preview small.draft-preview-notice {
+  color: var(--st-call);
+}
+.draft-preview-alone {
+  display: block;
+  padding: 0 4px;
+  font-size: calc(11px * var(--read-scale));
+}
+.draft-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.draft-preview-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+.draft-preview-bar .draft-preview-send {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.draft-preview-bar button:disabled {
+  opacity: 0.5;
+}
+/* Dock windows (pet, row, floor) end right below the reply: the question opens above it,
+   over the bubble, so [Clear & send] always stays inside the window. */
+.dock-mode .quick-reply .draft-confirm {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: calc(100% + 6px);
+  margin: 0;
+  background: var(--bg-1);
+  border-color: var(--accent-line);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+.dock-mode .quick-reply .draft-confirm-text {
+  max-height: 58px;
+}
 .terminal-send-hint svg {
   flex-shrink: 0;
-}
-.inspector-now .tone-resting .activity-tool,
-.inspector-now .tone-working .activity-tool {
-  margin-top: 7px;
-  padding-top: 7px;
-}
-@media (max-height: 820px) {
-  .inspector-now .now-result,
-  .inspector-now .progress-summary p {
-    -webkit-line-clamp: 1;
-  }
-  .inspector-now .now-note,
-  .inspector-now .now-more,
-  .inspector-now .activity-tool {
-    display: none;
-  }
-  .inspector-now .now-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    column-gap: 10px;
-    padding: 8px 10px;
-  }
-  .inspector-now .now-title,
-  .inspector-now .now-result,
-  .inspector-now .progress-summary {
-    grid-column: 1;
-  }
-  .inspector-now .now-result,
-  .inspector-now .progress-summary {
-    margin-top: 3px;
-  }
-  .inspector-now .now-actions {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    margin: 0;
-    flex-wrap: nowrap;
-  }
-  .inspector-now .now-actions .button.subtle {
-    display: none;
-  }
-  .app-body > .inspector .inspector-heading {
-    padding: 12px 16px 8px;
-  }
-  .app-body > .inspector .profile-avatar {
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-  }
-  .app-body > .inspector .profile-avatar .sprite-window {
-    zoom: 0.8;
-  }
-  .app-body > .inspector .status-line {
-    margin-top: 5px;
-  }
-  .app-body > .inspector .relation-strip {
-    padding-bottom: 8px;
-  }
-  .inspector-actions {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    padding: 10px 12px;
-  }
-  .inspector-actions > .button.primary {
-    flex: 1;
-    width: auto;
-    min-width: 0;
-    height: 34px;
-  }
-  .inspector-actions > div {
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-  .inspector-actions > div > .button {
-    height: 34px;
-    padding: 0 10px;
-  }
-  .return-office {
-    flex-basis: 100%;
-    height: 30px;
-  }
 }
 
 .palette-group {
@@ -773,4 +803,215 @@
   .brand-tag {
     display: none;
   }
+}
+/* What a calling colleague asks (questions, a plan, a permission prompt), in the now card. */
+.request-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  font-size: calc(12px * var(--read-scale));
+  line-height: 1.5;
+  color: var(--text);
+}
+.request-question + .request-question {
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-2);
+}
+.request-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-3);
+}
+.request-head b {
+  font-size: calc(12px * var(--read-scale));
+  font-weight: 650;
+  color: var(--text);
+}
+.request-head small {
+  margin-left: auto;
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--text-4);
+}
+.request-head .now-more {
+  margin: 0 0 0 auto;
+}
+.request-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.request-chip.multi {
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+.request-text {
+  margin: 5px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.request-options {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.request-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 7px;
+  text-align: left;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+}
+.request-option svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.request-option span {
+  display: grid;
+  min-width: 0;
+}
+.request-option b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.request-option small {
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+button.request-option:hover:not(:disabled) {
+  border-color: var(--accent-line);
+}
+.request-option.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.request-option.other {
+  width: auto;
+  color: var(--text-2);
+}
+.request-option:disabled {
+  opacity: 0.55;
+}
+.request-other {
+  margin-top: 5px;
+}
+.request-other textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 5px 7px;
+  border-radius: 7px;
+  font: inherit;
+  color: var(--text);
+  background: var(--field, var(--bg-2));
+  border: 1px solid var(--accent-line);
+}
+.request-submit,
+.request-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.request-choices .button,
+.request-submit .button {
+  height: auto;
+  min-height: 28px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 12px;
+  text-align: left;
+  white-space: normal;
+}
+.request-choice-number {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  opacity: 0.7;
+}
+.request-choice.role-deny {
+  color: var(--text-2);
+}
+.request-command {
+  margin: 6px 0 0;
+  max-height: 140px;
+  overflow: auto;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--read-scale));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.request-preview {
+  margin: 2px 0 0 8px;
+}
+.request-preview .now-more {
+  margin: 0;
+}
+.request-preview-body {
+  margin: 4px 0 0;
+  max-height: calc(260px * var(--read-scale));
+  overflow: auto;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--read-scale));
+  line-height: 1.35;
+  white-space: pre;
+  user-select: text;
+}
+.request-chat {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+.request-chat .button {
+  height: auto;
+  min-height: 26px;
+  gap: 5px;
+  font-size: 12px;
+}
+.request-plan-body {
+  max-height: calc(72px * var(--read-scale));
+  overflow: hidden;
+  margin-top: 5px;
+  font-size: calc(12px * var(--read-scale));
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent);
+  mask-image: linear-gradient(180deg, #000 55%, transparent);
+}
+.request-plan-body.open {
+  max-height: calc(360px * var(--read-scale));
+  overflow: auto;
+  -webkit-mask-image: none;
+  mask-image: none;
+  user-select: text;
+}
+.request-file,
+.request-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--text-3);
+  overflow-wrap: anywhere;
 }

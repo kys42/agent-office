@@ -5,12 +5,57 @@ import { taskStart } from './lifecycle';
 import { m } from './i18n';
 
 export const isHelper = (s: Session) => ['subagent', 'child'].includes(s.relation?.kind ?? '');
+/** An agent-team member (another session leads it): a helper once its lead is found. */
+export const isTeammate = (s: Session) => !!s.relation?.team;
 export const isBackground = (s: Session) =>
   ['scheduled', 'internal'].includes(s.origin?.kind ?? '');
-export const needsAttention = (s: Session) => !s.archived && ['call', 'error'].includes(s.status);
+export const needsAttention = (s: Session) =>
+  !s.remote?.stale && !s.archived && ['call', 'error'].includes(s.status);
 
-/** Retain a helper's result for its parent's current task, independent of silence duration. */
-export function helperPresence(s: Session, sessions: Session[], now = Date.now()) {
+/**
+ * How long a helper may stay silent mid-task before it counts as gone. Beyond the record-based
+ * ends below, a helper can stop without a closing record: its process killed or crashed (the last
+ * tool call stays), or a reply cut short (max_tokens, an API error: the last reply stays). The
+ * standing-by window (30 minutes) is long enough for a slow test run, short enough that such a
+ * leftover does not hold a desk for long.
+ */
+export const HELPER_UNFINISHED_MS = 30 * 60_000;
+/** The person's choice (the `helperRetainMinutes` preference, see view-prefs), in ms. */
+export interface ResidentOptions {
+  unfinishedMs?: number;
+}
+/**
+ * Still inside its own task, judged by the last observed record alone (observedStatus, the raw
+ * status before the time ladder turns quiet work into ready/idle): a tool call or tool result
+ * ('work') or a reply on the way ('think'), with no final answer ('done'), stop by the person
+ * (aborted turn: 'idle') or question/error after it. A long tool writes nothing for minutes, so
+ * this outlasts isWorking's quiet window, up to HELPER_UNFINISHED_MS.
+ *
+ * Not used: "the parent is resting, so a quiet helper must be done". A background helper keeps
+ * running while its parent answers and rests, so that would retire the very helper this keeps.
+ */
+export function helperUnfinished(
+  s: Session,
+  now = Date.now(),
+  unfinishedMs: number = HELPER_UNFINISHED_MS,
+) {
+  if (s.remote?.stale || s.archived) return false;
+  return (
+    ['work', 'think'].includes(s.observedStatus ?? s.status) && now - s.updatedAt <= unfinishedMs
+  );
+}
+
+/**
+ * Retain a helper's result for its parent's current task, independent of silence duration.
+ * `host` is the top visible session of its chain; officeResidents attaches the helper there even
+ * when a finished helper between them has retired.
+ */
+export function helperPresence(
+  s: Session,
+  sessions: Session[],
+  now = Date.now(),
+  { unfinishedMs }: ResidentOptions = {},
+) {
   if (s.pinned || isWorking(s, now) || needsAttention(s)) return { visible: true };
   if (s.archived) return { visible: false };
   const anchor = taskStart(s) ?? s.startedAt;
@@ -21,13 +66,17 @@ export function helperPresence(s: Session, sessions: Session[], now = Date.now()
     const parent = parentSession(current, sessions);
     if (!parent || visited.has(parent.id)) break;
     visited.add(parent.id);
-    // A resumed helper gets a newer own task anchor. Late results alone cannot revive it.
-    if ((taskStart(parent) ?? 0) > anchor || parent.archived || parent.zone === 'archive')
+    if (parent.archived || parent.zone === 'archive') return { visible: false };
+    // A resumed helper gets a newer own task anchor. Late results alone cannot revive it; only
+    // an unfinished helper keeps its desk through an ancestor's newer request.
+    if ((taskStart(parent) ?? 0) > anchor && !helperUnfinished(s, now, unfinishedMs))
       return { visible: false };
     host = parent;
     current = parent;
   }
-  // Unknown relationships are not grounds for disappearing a recently observed helper.
+  // Unknown relationships are not grounds for disappearing a recently observed helper. The zone
+  // is the host's: a parent sent to waiting takes even an unfinished helper off the floor, as
+  // before (a helper desk lives only beside an office desk).
   return { visible: (host?.zone ?? s.zone) === 'office' || (!host?.zone && !s.zone), host };
 }
 export const sessionScopeLabel = (s: Session) => {
@@ -36,25 +85,37 @@ export const sessionScopeLabel = (s: Session) => {
     ? t.scheduled
     : s.origin?.kind === 'internal'
       ? t.internal
-      : isHelper(s)
-        ? t.helper
-        : t.conversation;
+      : isTeammate(s)
+        ? t.teammate
+        : isHelper(s)
+          ? t.helper
+          : t.conversation;
 };
 
 /** Canonical sessions remain intact in the store/MCP. Only office occupancy is projected. */
-export function officeResidents(sessions: Session[], now = Date.now()) {
+export function officeResidents(
+  sessions: Session[],
+  now = Date.now(),
+  options: ResidentOptions = {},
+) {
   const actors = new Map<string, Session[]>();
   const residents: Session[] = [],
     hidden: Session[] = [];
+  // Helper → its host, resolved over all sessions: the chain may run through a retired helper.
+  const hosts = new Map<string, string>();
   for (const s of sessions) {
     if (s.actor) {
       actors.set(s.actor.id, [...(actors.get(s.actor.id) ?? []), s]);
     } else {
       const presence = isHelper(s)
-        ? helperPresence(s, sessions, now)
+        ? helperPresence(s, sessions, now, options)
         : { visible: true, host: undefined };
       if (!s.pinned && (isBackground(s) ? !needsAttention(s) : !presence.visible)) hidden.push(s);
-      else residents.push(presence.host ? { ...s, zone: presence.host.zone } : s);
+      else {
+        residents.push(presence.host ? { ...s, zone: presence.host.zone } : s);
+        // Only a chain that reached its main session; a partly collected one attaches as before.
+        if (presence.host && !isHelper(presence.host)) hosts.set(s.id, presence.host.id);
+      }
     }
   }
   for (const group of actors.values()) {
@@ -104,5 +165,5 @@ export function officeResidents(sessions: Session[], now = Date.now()) {
       },
     });
   }
-  return { sessions: attachSessions(residents), hidden };
+  return { sessions: attachSessions(residents, hosts), hidden };
 }

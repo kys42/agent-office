@@ -1,18 +1,22 @@
+import { tmux } from './tmux';
+import { shell } from './shell';
+import { mobile } from './mobile';
 import { guide } from './guide';
+import { federation } from './federation';
 import { pets } from './pets';
+import { desks } from './desks';
 import type { Messages } from '../en';
 import { common } from './common';
 import { app } from './app';
 import { palette } from './palette';
-import { now } from './now';
 import { inspector } from './inspector';
 import { conversation } from './conversation';
 import { memory } from './memory';
+import { outputs } from './outputs';
 import { artifacts } from './artifacts';
 import { settings } from './settings';
 import { zoneEditor } from './zoneEditor';
 import { usage } from './usage';
-import { news } from './news';
 import { office } from './office';
 import { roster } from './roster';
 import { lounge } from './lounge';
@@ -23,20 +27,26 @@ import { desktop } from './desktop';
 import { dock } from './dock';
 import { desk } from './desk';
 import { terminal } from './terminal';
+import { prompts } from './prompts';
+import { launchSheet } from './launchSheet';
+import { launch } from './launch';
 
 export const ko: Messages = {
+  tmux,
+  shell,
+  mobile,
+  federation,
   common,
   app,
   palette,
-  now,
   inspector,
   conversation,
   memory,
+  outputs,
   artifacts,
   settings,
   zoneEditor,
   usage,
-  news,
   office,
   roster,
   lounge,
@@ -47,6 +57,10 @@ export const ko: Messages = {
   dock,
   desk,
   terminal,
+  prompts,
   pets,
+  desks,
   guide,
+  launchSheet,
+  launch,
 };

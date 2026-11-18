@@ -156,6 +156,7 @@ export const shared: Messages['shared'] = {
     scheduled: '자동 실행',
     internal: '내부 보조',
     helper: '보조 작업',
+    teammate: '팀메이트',
     conversation: '대화',
   },
   runtime: {
@@ -180,7 +181,8 @@ export const shared: Messages['shared'] = {
     hidden: '[숨김]',
   },
   api: {
-    checkConnection: '연결을 확인해 주세요',
+    checkConnection:
+      '실시간 연결이 끊겼어요. 마지막 사무실을 표시하고 있어요. 연결 상태를 확인해 주세요.',
     revealDesktopOnly: '원본 위치 열기는 데스크탑 앱에서 사용할 수 있어요.',
   },
 };

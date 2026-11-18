@@ -1,8 +1,31 @@
 export const office = {
   region: 'Pixel office',
+  list: {
+    label: 'Office list',
+    viewLabel: 'View',
+    roomLabel: { waiting: 'Lounge list', archive: 'Archive list' },
+    views: { graphic: 'Graphic', list: 'List' },
+    orderLabel: 'Office list order',
+    byProject: 'Group by project',
+    teammate: 'Teammate',
+    project: 'Project / branch',
+    status: 'Status',
+    activity: 'Last active',
+    pinned: 'Pinned',
+    main: 'Main',
+    helperOf: (name: string) => `Helping ${name}`,
+    forkOf: (name: string) => `Forked from ${name}`,
+    hiddenParent: 'Helping a teammate',
+    hiddenFork: 'Forked from a conversation',
+    helpers: (n: number) => `${n} ${n === 1 ? 'helper' : 'helpers'}`,
+    helpersCalling: (n: number) => `${n} calling`,
+    helperNews: 'New result from a helper',
+    activeRuns: (active: number, total: number) => `${active} active · ${total} runs`,
+    count: (n: number) => `${n} ${n === 1 ? 'teammate' : 'teammates'}`,
+  },
   phase: { dawn: 'Early morning', day: 'Daytime', dusk: 'Dusk', night: 'Night' },
   station: (name: string, status: string) => `${name}, ${status}`,
-  dragToZone: (posture: string) => `${posture} · Drag to another zone`,
+  dragToZone: (posture: string) => `${posture} · Drag to reorder or to another zone`,
   empty: {
     title: 'Waiting for the next teammate',
     body: "A desk appears as soon as there's new activity.",
@@ -11,7 +34,8 @@ export const office = {
   drop: {
     newZone: 'Drop here to start a new zone',
     moveTo: (zone?: string) => (zone ? `Move to the ${zone} zone` : 'Move to this zone'),
-    elsewhere: 'Drop on another zone or on empty floor',
+    elsewhere: 'Drop on a desk in this zone to reorder, or on another zone or empty floor',
+    reorder: 'Drop to put the desk here',
   },
   hud: {
     counts: (projects: number, desks: number) =>
@@ -29,6 +53,9 @@ export const office = {
     fit: 'Fit all',
     inLabel: 'Zoom into the office',
     inTitle: 'Zoom in · scroll to look around',
+    zoneLabel: (zone: string) => `Zoom into ${zone}`,
+    zoneTitle: 'Zoom into this zone · click again or Esc to see all',
+    zoneBack: (zone: string) => `${zone} · See all`,
   },
   // Workspace around the map: zone tabs, toolbar, folded records and the archive room.
   spaces: 'Office spaces',

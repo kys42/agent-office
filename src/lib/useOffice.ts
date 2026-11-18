@@ -1,30 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
+import { isRemoteId } from '../shared/federation';
 import { savedLocalePreference, useI18n, useLocalePreference } from './i18n';
 import { getLocale, m } from '../shared/i18n';
 import { demoDeriver, demoSnapshot, reconcileDemo } from './demo';
-import { applyNoticeReceipt } from '../shared/notices';
-import { matchesQuery } from '../shared/notice-pages';
+import { applyNoticeReceipt, cardReadNotices } from '../shared/notices';
 import { adoptSnapshot, applyPatch, isPatch, type SnapshotMessage } from '../shared/snapshot-patch';
 import { officeResidents } from '../shared/residents';
-import { allocateSeats, officeZone, seatKey } from '../shared/office';
+import { helperUnfinishedMs, mergeViews } from '../shared/view-prefs';
+import { allocateSeats, officeZone, reorderSeatMap, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
-import type {
-  NoticeQuery,
-  NoticeReceipt,
-  Preferences,
-  Session,
-  SessionPatch,
-  Snapshot,
-} from '../shared/types';
+import type { NoticeReceipt, Preferences, Session, SessionPatch, Snapshot } from '../shared/types';
 import { useWakeAt } from './useWakeAt';
+import { useQuotas } from './useQuotas';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
+import { mergeDeskCustomization, normalizeDeskCustomization } from '../shared/desks';
 import { isPageHidden, onPageVisibility } from './visibility';
+import { useReadingText } from './useReadingText';
+import { onReached } from './reached';
+import { useGlass } from './useGlass';
+import { setMotionReduced } from './frame-clock';
 
 /**
  * The demo rewritten in the active language, carrying over what the viewer did in it: preferences
- * (the language choice lives there), pins, hides, archive/return and notice receipts.
+ * (the language choice lives there), pins, hides, archive/return, desk order and notice receipts.
  */
 function relocalizedDemo(prev: Snapshot): Snapshot {
   const fresh = demoSnapshot();
@@ -36,10 +36,20 @@ function relocalizedDemo(prev: Snapshot): Snapshot {
     sessions: fresh.sessions.map((s) => {
       const was = sessions.get(s.id);
       if (!was) return s;
-      const { pinned, archived, completed, notes, hiddenAt, openCount, lastViewedAt, returnedAt } =
-        was;
+      const {
+        pinned,
+        archived,
+        completed,
+        notes,
+        hiddenAt,
+        openCount,
+        lastViewedAt,
+        returnedAt,
+        officeSeat,
+      } = was;
       return {
         ...s,
+        officeSeat,
         pinned,
         archived,
         completed,
@@ -59,6 +69,7 @@ function relocalizedDemo(prev: Snapshot): Snapshot {
   });
 }
 export type ReceiptAction = 'read' | 'dismiss' | 'unread' | 'view';
+export type ReceiptHandler = (receipts: NoticeReceipt[], action: ReceiptAction) => unknown;
 /** Decorative/derived time (working → resting after 2 minutes) refreshes at this pace. */
 const CLOCK_MS = 15_000;
 /** Matches the service's per-request limit for `veil` and `pin`. */
@@ -77,10 +88,22 @@ function customizedDemo() {
   } catch {
     // An invalid demo setting falls back to the original characters.
   }
+  try {
+    snapshot.preferences.deskAppearance = normalizeDeskCustomization(
+      JSON.parse(localStorage.getItem('office:demo-desks') || 'null'),
+    );
+  } catch {
+    // …and to the original desks.
+  }
   return snapshot;
 }
 
-export function useOffice(demo: boolean, notify: (message: string) => void = () => {}) {
+export function useOffice(
+  demo: boolean,
+  notify: (message: string) => void = () => {},
+  /** `quotas: false`: a window that draws no desks (a reader window) reads no usage limits. */
+  { quotas: readQuotas = true }: { quotas?: boolean } = {},
+) {
   const { locale } = useI18n();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? customizedDemo() : null);
   const [error, setError] = useState('');
@@ -90,9 +113,12 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const held = useRef<Snapshot | null>(snapshot);
   // Bumped when the live subscription starts or ends, so a late resync cannot land in the demo.
   const generation = useRef(0);
+  // Offices that came from the service (not the demo), e.g. to trust their privacy setting.
+  const fromService = useRef(new WeakSet<Snapshot>());
   // Live, only `accept` moves it (an effect could step it back behind a newer patch); the demo
   // changes its snapshot directly, so there it follows the state.
   const resyncing = useRef(false);
+  const resyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (demo) held.current = snapshot;
   }, [demo, snapshot]);
@@ -112,15 +138,26 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
         if (resyncing.current) return;
         resyncing.current = true;
         const live = generation.current;
-        void api
-          .snapshot()
-          .then(
-            (s) => live === generation.current && accept(s),
-            () => {},
-          )
-          .finally(() => {
-            resyncing.current = false;
-          });
+        const request = (attempt: number) => {
+          if (live !== generation.current) return;
+          void api.snapshot().then(
+            (s) => {
+              if (live !== generation.current) return;
+              resyncing.current = false;
+              accept(s);
+              setError('');
+            },
+            (e) => {
+              if (live !== generation.current) return;
+              setError(e.message);
+              const delay = [1000, 3000, 10000][attempt];
+              if (delay !== undefined)
+                resyncTimer.current = setTimeout(() => request(attempt + 1), delay);
+              else resyncing.current = false;
+            },
+          );
+        };
+        request(0);
         return;
       }
       next = applyPatch(prev, message);
@@ -129,6 +166,9 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       if (next === prev) return;
     }
     held.current = next;
+    clearTimeout(resyncTimer.current);
+    resyncing.current = false;
+    fromService.current.add(next);
     setSnapshot(next);
   }, []);
   // Demo content is written in the language it was generated in.
@@ -154,7 +194,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       .then((s) => {
         if (active) {
           accept(s);
-          setError('');
+          if (!resyncing.current) setError('');
         }
       })
       .catch((e) => {
@@ -164,13 +204,18 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       (message) => {
         if (active) {
           accept(message);
-          setError('');
+          if (!resyncing.current) setError('');
         }
       },
       () => held.current && { epoch: held.current.epoch, version: held.current.version },
+      (message) => {
+        if (active && (message || !resyncing.current)) setError(message ?? '');
+      },
     );
     return () => {
       active = false;
+      clearTimeout(resyncTimer.current);
+      resyncing.current = false;
       if (generation.current === live) generation.current++;
       unsubscribe();
     };
@@ -183,8 +228,25 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       // Demo still works when local storage is unavailable.
     }
   }, [demo, snapshot?.preferences.petAppearance]);
+  useEffect(() => {
+    if (!demo || !snapshot?.preferences.deskAppearance) return;
+    try {
+      localStorage.setItem(
+        'office:demo-desks',
+        JSON.stringify(snapshot.preferences.deskAppearance),
+      );
+    } catch {
+      // Demo still works when local storage is unavailable.
+    }
+  }, [demo, snapshot?.preferences.deskAppearance]);
   // Every window (big office, desk pet / row, dock card) follows the saved language.
   useLocalePreference(snapshot?.preferences.locale, !!snapshot, snapshot?.locale);
+  // …and the saved reading-text size and font (#246).
+  useReadingText(snapshot?.preferences, !!snapshot, demo);
+  useGlass(snapshot?.preferences, !!snapshot, demo);
+  // …and the office tick holds still with "less motion" (frame-clock.ts).
+  const reducedMotion = !!snapshot?.preferences.reducedMotion;
+  useEffect(() => setMotionReduced(reducedMotion), [reducedMotion]);
   // On a language switch, rewrite the demo in the new language but keep its preferences:
   // the language choice itself lives there, so resetting them would bounce the switch back.
   useEffect(() => {
@@ -212,7 +274,13 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     () => (demo && snapshot ? derive(snapshot, Date.now()) : snapshot),
     [demo, snapshot, clock, derive],
   );
-  const model = useMemo(() => buildOfficeModel(shown, Date.now()), [shown, clock]);
+  // Only the service's own office says whether privacy is on: leaving the demo, its snapshot
+  // lingers for a render, and its settings must not start a real read.
+  const quotas = useQuotas(
+    demo || !readQuotas,
+    !demo && snapshot && fromService.current.has(snapshot) ? !!snapshot.preferences.privacy : null,
+  );
+  const model = useMemo(() => buildOfficeModel(shown, Date.now(), quotas), [shown, clock, quotas]);
 
   const refresh = async () => {
     if (demo) {
@@ -220,11 +288,15 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       return;
     }
     setRefreshing(true);
+    const live = generation.current;
     try {
-      accept(await api.refresh());
+      const next = await api.refresh();
+      if (live !== generation.current) return;
+      accept(next);
       setError('');
       notify(m().app.toast.refreshed);
     } catch (e) {
+      if (live !== generation.current) return;
       setError((e as Error).message);
       notify((e as Error).message);
     } finally {
@@ -244,6 +316,10 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
                 petAppearance: p.petAppearance
                   ? mergePetCustomization(s.preferences.petAppearance, p.petAppearance)
                   : s.preferences.petAppearance,
+                deskAppearance: p.deskAppearance
+                  ? mergeDeskCustomization(s.preferences.deskAppearance, p.deskAppearance)
+                  : s.preferences.deskAppearance,
+                views: p.views ? mergeViews(s.preferences.views, p.views) : s.preferences.views,
               },
             })
           : s,
@@ -277,6 +353,10 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
    * another run starts speaking for it. Resolves to the new state; rejects so callers can tell.
    */
   const pin = async (s: Session) => {
+    if (s.remote) {
+      notify(m().federation.readOnly);
+      return false;
+    }
     const next = !s.pinned;
     const ids = s.resident?.key.startsWith('actor:') ? s.resident.sessionIds : [s.id];
     if (demo) {
@@ -296,46 +376,60 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       accept(await api.pin(ids.slice(i, i + BATCH), next));
     return next;
   };
+  /**
+   * Bookmark one of a colleague's messages (`on`), or take its bookmark off; every window then
+   * marks it from the office it receives. Nothing is kept in the demo.
+   */
+  const bookmark = async (sessionId: string, eventId: string, on: boolean) => {
+    if (demo) return;
+    accept(
+      on
+        ? (await api.bookmark(sessionId, eventId)).snapshot
+        : await api.unbookmarkMessage(sessionId, eventId),
+    );
+  };
+  /** Take a bookmark off by its id (the bookmark list). */
+  const unbookmark = async (id: string) => {
+    if (!demo) accept(await api.unbookmark(id));
+  };
+  /** Resolves whether the receipts were recorded (a failure is also shown as a toast). */
   const receipt = async (receipts: NoticeReceipt[], action: ReceiptAction) => {
     if (demo) {
       setSnapshot((s) =>
         s ? { ...s, notices: applyNoticeReceipt(s.notices ?? [], receipts, action) } : s,
       );
-      return;
+      return true;
     }
     try {
       for (let i = 0; i < receipts.length; i += 1000)
         accept(await api.notices(receipts.slice(i, i + 1000), action));
+      return true;
     } catch (e) {
       notify((e as Error).message);
+      return false;
     }
   };
   /**
-   * Read every unread notice a list shows, carried or not (the collector marks them), except
-   * what arrived after `asOf`.
+   * A message sent to a colleague's run, or a jump to its terminal, reads its results (#300):
+   * every unread final reply that run had by then, carried in the snapshot or not (the collector
+   * marks them). Calls and errors stay; a remote office's notices are read-only here.
    */
-  const readAll = async (query: NoticeQuery, asOf: number) => {
+  const readReplies = async (id: string, asOf: number) => {
     if (demo) {
-      setSnapshot((s) =>
-        s
-          ? {
-              ...s,
-              notices: (s.notices ?? []).map((n) =>
-                matchesQuery(n, { ...query, includeRead: false }) && n.receivedAt <= asOf
-                  ? { ...n, seenAt: Date.now() }
-                  : n,
-              ),
-            }
-          : s,
-      );
+      const due = cardReadNotices(held.current?.notices ?? [], [id]);
+      if (due.length) await receipt(due, 'read');
       return;
     }
+    if (isRemoteId(id)) return;
     try {
-      accept(await api.noticeReadAll(query, asOf));
+      accept(await api.readReplies(id, asOf));
     } catch (e) {
       notify((e as Error).message);
     }
   };
+  const latestReadReplies = useRef(readReplies);
+  latestReadReplies.current = readReplies;
+  useEffect(() => onReached((id) => void latestReadReplies.current(id, Date.now())), []);
   /** Count an open of this colleague (frequent sort); never blocks the selection. */
   const visit = (id: string) => {
     if (!demo) {
@@ -360,6 +454,10 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   };
   /** Hide colleagues until their next conversation (`on`), or bring them back now. */
   const veil = async (ids: string[], on: boolean) => {
+    if (ids.some(isRemoteId)) {
+      notify(m().federation.readOnly);
+      return;
+    }
     const hiddenAt = on ? Date.now() : null;
     if (demo) {
       setSnapshot((s) =>
@@ -380,15 +478,52 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       notify((e as Error).message);
     }
   };
-  const returnToOffice = async (id: string) => {
+  /** Desks of one zone in this order (`moveDesk`); the service keeps it for every window. */
+  const reorderSeats = async (ids: string[]) => {
+    if (ids.some(isRemoteId)) {
+      notify(m().federation.readOnly);
+      return;
+    }
+    if (demo) {
+      setSnapshot((s) => {
+        if (!s) return s;
+        const byId = new Map(s.sessions.map((x) => [x.id, x]));
+        const seats = Object.fromEntries(
+          s.sessions
+            .filter((x) => !x.attachedTo && x.officeSeat !== undefined)
+            .map((x) => [seatKey(x), x.officeSeat!]),
+        );
+        const keys = ids.flatMap((id) => (byId.has(id) ? [seatKey(byId.get(id)!)] : []));
+        const next = reorderSeatMap(seats, keys);
+        // Every run of a persona carries its seat key, so all of them move.
+        return reconcileDemo({
+          ...s,
+          sessions: s.sessions.map((x) =>
+            x.attachedTo || next[seatKey(x)] === undefined
+              ? x
+              : { ...x, officeSeat: next[seatKey(x)] },
+          ),
+        });
+      });
+      return;
+    }
+    try {
+      accept(await api.reorderSeats(ids));
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
+  /** Resolves true once the store took it (false: the failure was already shown). */
+  const returnToOffice = async (id: string): Promise<boolean> => {
     if (!demo) {
       try {
         accept(await api.returnToOffice(id));
         notify(m().app.toast.returned);
+        return true;
       } catch (e) {
         notify((e as Error).message);
+        return false;
       }
-      return;
     }
     setSnapshot((s) => {
       if (!s) return s;
@@ -397,9 +532,9 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
           ? { ...x, archived: false, returnedAt: Date.now(), zone: 'office' as const }
           : x,
       );
-      const active = officeResidents(sessions).sessions.filter(
-        (x) => officeZone(x, s.preferences) === 'office',
-      );
+      const active = officeResidents(sessions, Date.now(), {
+        unfinishedMs: helperUnfinishedMs(s.preferences),
+      }).sessions.filter((x) => officeZone(x, s.preferences) === 'office');
       const seats = allocateSeats(
         active,
         Object.fromEntries(
@@ -415,6 +550,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
         })),
       };
     });
+    return true;
   };
   return {
     snapshot: shown,
@@ -426,10 +562,12 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     patch,
     pin,
     receipt,
-    readAll,
     visit,
     veil,
+    reorderSeats,
     returnToOffice,
+    bookmark,
+    unbookmark,
   };
 }
 export type OfficeCore = ReturnType<typeof useOffice>;

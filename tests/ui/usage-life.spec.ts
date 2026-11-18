@@ -108,9 +108,16 @@ test('Focus and incoming paperwork follow normalized observations; details show 
   await expect(page.locator('.focus-level-2')).toHaveCount(0);
   await page.locator('.office-pet').click();
   await page.getByRole('tab', { name: '작업 정보' }).click();
-  await expect(page.locator('.cost-card')).toContainText('$12.34');
-  await expect(page.locator('.cost-card')).toContainText('실제 청구액이 아니에요');
-  await expect(page.locator('.working-location')).toContainText('/demo/feature-office');
+  const info = page.locator('.card-info');
+  const cost = info.locator('.info-row').filter({ hasText: '이 동료가 쌓은 작업량' });
+  await expect(cost).toContainText('$12.34');
+  // The panel's long disclaimer ('실제 청구액이 아니에요') is gone; the card keeps a short basis note.
+  await expect(info).toContainText('관측 누적 · API 기본 요금 환산');
+  const working = info.locator('.info-row').filter({ hasText: '최근 실제 작업 위치' });
+  await expect(working.locator('code')).toHaveAttribute('title', '/demo/feature-office');
+  await expect(info.locator('.info-row').filter({ hasText: '브랜치' })).toContainText(
+    'feat/office',
+  );
   await expect(page.locator('.desk-branch')).toContainText('feat/office');
 });
 

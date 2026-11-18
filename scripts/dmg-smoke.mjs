@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { releaseArchitecture, releaseStem, sha256 } from './release-utils.mjs';
+import { verifyDeveloperId } from './macos-signing.mjs';
 
 const arch = releaseArchitecture(process.env.AGENT_OFFICE_ARCH ?? process.arch);
 const packaged = path.resolve(`release/Agent Office-darwin-${arch}/Agent Office.app`);
@@ -15,7 +16,10 @@ const dmg = path.resolve('release', `${stem}.dmg`);
 const manifest = JSON.parse(await readFile(path.resolve('release', `${stem}.json`), 'utf8'));
 assert.equal(await sha256(dmg), manifest.dmg.sha256, 'DMG checksum');
 const temp = await mkdtemp(path.join(os.tmpdir(), 'agent-office-installed-'));
-const mount = path.join(temp, 'volume');
+// macOS can reject nested image mounts on removable volumes. Keep only the mountpoint
+// on the system volume; the large installed copy/profile may still use an external TMPDIR.
+const mountRoot = await mkdtemp('/private/tmp/agent-office-mount-');
+const mount = path.join(mountRoot, 'volume');
 let attached = false;
 try {
   execFileSync('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg], {
@@ -31,25 +35,45 @@ try {
     await readFile(path.join(installed, 'Contents/Resources/release.json'), 'utf8'),
   );
   assert.deepEqual(actual, info, 'Installed artifact metadata matches the package');
+  const iconFile = execFileSync(
+    'plutil',
+    ['-extract', 'CFBundleIconFile', 'raw', '-o', '-', path.join(installed, 'Contents/Info.plist')],
+    { encoding: 'utf8' },
+  ).trim();
+  assert.equal(
+    await sha256(path.join(installed, 'Contents/Resources', iconFile)),
+    await sha256(path.resolve('public/icon.icns')),
+    'Installed bundle contains the approved application icon',
+  );
   execFileSync('codesign', ['--verify', '--deep', '--strict', installed], { stdio: 'inherit' });
-  execFileSync(process.execPath, ['scripts/desktop-smoke.mjs'], {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      AGENT_OFFICE_EXECUTABLE: path.join(installed, 'Contents/MacOS/Agent Office'),
-    },
-  });
+  if (actual.signing === 'developer-id') {
+    assert.equal(manifest.notarized, true, 'Signed distribution must be notarized');
+    verifyDeveloperId(installed, actual.teamId);
+    for (const artifact of [installed, dmg])
+      execFileSync('xcrun', ['stapler', 'validate', artifact], { stdio: 'inherit' });
+    execFileSync('spctl', ['--assess', '--type', 'execute', installed], { stdio: 'inherit' });
+  }
+  for (const smoke of ['scripts/desktop-smoke.mjs', 'scripts/card-windows-smoke.mjs'])
+    execFileSync(process.execPath, [smoke], {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        AGENT_OFFICE_EXECUTABLE: path.join(installed, 'Contents/MacOS/Agent Office'),
+      },
+    });
   console.log(
     JSON.stringify({
       ok: true,
       installedFromDmg: true,
+      appIcon: iconFile,
       sourceCommit: actual.sourceCommit,
       arch,
       signing: actual.signing,
-      notarized: actual.notarized,
+      notarized: manifest.notarized,
     }),
   );
 } finally {
   if (attached) execFileSync('hdiutil', ['detach', mount], { stdio: 'inherit' });
   await rm(temp, { recursive: true, force: true });
+  await rm(mountRoot, { recursive: true, force: true });
 }

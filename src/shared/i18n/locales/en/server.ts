@@ -8,6 +8,8 @@ export const server = {
     notFound: "Couldn't find that session. Refresh and pick it again.",
     excluded: 'This session is excluded in Settings.',
     changed: 'The record has changed. Refresh the work card and create it again.',
+    noMessage: "That message isn't in the record anymore. Refresh the conversation and try again.",
+    noBookmark: 'That bookmark is gone. It may have been removed in another window.',
   },
   handoff: {
     title: (name: string) => `${name} · Handoff`,
@@ -96,6 +98,7 @@ export const server = {
     toolRun: (tool: string) => `Ran ${tool}`,
     toolResult: (tool: string) => `${tool} result`,
     tool: 'Tool',
+    localCommand: (command: string) => `Ran ${command}`,
   },
   session: {
     unknownWorkspace: 'Unknown workspace',

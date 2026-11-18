@@ -1,0 +1,46 @@
+/* Windows keeps native caption controls, snap and system menus. Only the title text is HTML. */
+body.is-windows {
+  --font-ui: 'Segoe UI Variable', 'Segoe UI', 'Pretendard Variable', system-ui, sans-serif;
+  --font-display: var(--font-ui);
+}
+body.is-windows .app {
+  grid-template-rows: 36px minmax(0, 1fr);
+}
+.windows-titlebar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  min-width: 0;
+  padding-left: 12px;
+  margin-left: env(titlebar-area-x, 0px);
+  width: env(titlebar-area-width, calc(100% - 150px));
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--bg-1);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+body.is-windows .app > .sidebar,
+body.is-windows .app > .app-body {
+  grid-row: 2;
+  min-height: 0;
+}
+body.is-windows .sidebar-top {
+  display: none;
+}
+body.is-windows .source-list {
+  padding-top: 14px;
+}
+/* The remaining native caption area has the same surface as the custom title text. */
+body.is-windows .app {
+  background: var(--bg-1);
+}
+@media (forced-colors: active) {
+  .windows-titlebar {
+    color: CanvasText;
+    background: Canvas;
+  }
+}

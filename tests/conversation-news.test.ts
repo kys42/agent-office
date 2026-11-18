@@ -242,3 +242,42 @@ test('Retained final excerpts fill source gaps without replacing or duplicating 
   assert.equal(conversationKind(combined.find((e) => e.id === 'gap')!), 'reply');
   assert.equal(retainedConversation([full, gap], notices).filter((e) => e.excerpt).length, 0);
 });
+test('Receipts are all or nothing: a hidden colleague or a failed write leaves every notice as it was (#90)', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-news-receipts-'));
+  const store = new OfficeStore(dir);
+  const unread = (id: string) => !store.noticeList().find((n) => n.id === id)!.seenAt;
+  try {
+    const colleague = (name: string, project: string): Session => ({
+      ...session([event(name, 'assistant', 'commentary')]),
+      provider: 'claude',
+      id: `claude:${name}`,
+      nativeId: name,
+      project,
+    });
+    store.upsert([colleague('shown', 'shown'), colleague('hidden', 'hidden')], 'claude');
+    const [shown, hidden] = ['claude:shown', 'claude:hidden'].map((id) =>
+      store.noticeList().find((n) => n.sessionId === id)!,
+    );
+    // The hidden colleague's receipt fails the whole batch, the one before it included.
+    store.preferences({ excludedProjects: ['hidden'] });
+    assert.throws(() => store.noticeReceipt([shown, hidden], 'read'));
+    store.preferences({ excludedProjects: [] });
+    assert.ok(unread(shown.id) && unread(hidden.id));
+    // A write that fails halfway is rolled back.
+    const target = store as unknown as { writeNotice(n: OfficeNotice): void };
+    const write = target.writeNotice;
+    let calls = 0;
+    target.writeNotice = function (n) {
+      if (++calls === 2) throw new Error('disk full');
+      write.call(this, n);
+    };
+    assert.throws(() => store.noticeReceipt([shown, hidden], 'read'), /disk full/);
+    target.writeNotice = write;
+    assert.ok(unread(shown.id) && unread(hidden.id));
+    store.noticeReceipt([shown, hidden], 'read');
+    assert.ok(!unread(shown.id) && !unread(hidden.id));
+  } finally {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

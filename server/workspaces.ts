@@ -34,7 +34,7 @@ export async function resolveWorkspace(
         ],
         { timeout: 1800, maxBuffer: 8192, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } },
       );
-      const [worktree, common] = stdout.trim().split('\n');
+      const [worktree, common] = stdout.trim().split(/\r?\n/);
       if (!path.isAbsolute(worktree) || !path.isAbsolute(common))
         throw new Error('unsupported git result');
       const key = await realpath(common).catch(() => common);
@@ -102,11 +102,18 @@ export async function enrichWorkspaces(sessions: Session[]) {
           const candidate = s.workingLocation
             ? await resolveWorkspace(s.workingLocation.path, `${s.provider}:${s.project}`)
             : null;
-          // Only a locally verified Git workspace can move a desk to a new team.
+          // Only a locally verified Git workspace can move a desk to a new team. Work in the
+          // worktree it launched in (a file edited in a subfolder) is no move: its record's
+          // branch stays, so it keeps sharing the long desk with colleagues started there.
+          const moved =
+            candidate?.evidence === 'git-common-dir' &&
+            !(
+              base.evidence === 'git-common-dir' &&
+              base.key === candidate.key &&
+              base.worktree === candidate.worktree
+            );
           const workspace =
-            candidate?.evidence === 'git-common-dir'
-              ? { ...candidate, locationSource: s.workingLocation }
-              : base;
+            moved && candidate ? { ...candidate, locationSource: s.workingLocation } : base;
           return {
             ...s,
             workspace,

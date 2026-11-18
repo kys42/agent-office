@@ -1,5 +1,7 @@
 # Agent Office 문서 지도
 
+Windows 지원 범위·빌드·플랫폼별 미지원과 검수: [Windows 안내](development/WINDOWS.md).
+
 처음 이어받을 때는 **프로젝트 맥락 → 골든 정책 → 세션 분석 → 공통 규격 → 코드** 순서로 읽는다. 문서는 현재 지켜야 할 계약, 구현 방법, 조사 근거를 나눠 보관한다.
 
 ```text
@@ -13,10 +15,12 @@ docs/
 │   └── OFFICE-OBSERVATION-PROTOCOL.md # 플랫폼 독립 관측 계약
 ├── development/                  # 구현·연결·검증·개발 이력
 │   ├── ARCHITECTURE.md            # 실행·저장·보안 경계
+│   ├── DESIGN-SYSTEM.md           # 순정 맥 셸·토큰·라이트/다크
 │   ├── SESSION-INGESTION.md       # 수집 흐름·자체/외부 모듈·장애 분석
 │   ├── PERFORMANCE-DESIGN.md      # 경량화 측정·단계별 제안 (미구현)
 │   ├── OFFICE-ASSETS.md          # 가구·펫·소품 확장 계약
 │   ├── TERMINAL.md               # 원래 터미널로 이동·바로 보내기
+│   ├── POPUP-CARDS.md            # 위치 기억·독립 고정 창
 │   ├── MCP.md                    # 읽기 전용 도구 연결
 │   ├── QA.md                     # 날짜별 검증 결과·한계
 │   └── PLAN.md                   # 초기 구현 계획 이력
@@ -37,13 +41,16 @@ docs/
 | 세션 중복·상태·이름·수집 오류 분석 | [세션 기록 분석](development/SESSION-INGESTION.md) |
 | 사용 한도·누적 비용·현재 작업 폴더 | [사용량과 실행 위치](development/USAGE-AND-WORKSPACE.md) |
 | 원래 터미널 이동·바로 보내기 | [터미널 연결](development/TERMINAL.md) |
+| 팝업 위치 기억·독립 고정 카드 | [팝업 카드](development/POPUP-CARDS.md) |
 | 책상·펫·소품 꾸미기 확장 | [에셋 계약](development/OFFICE-ASSETS.md) |
+| 휴대폰에서 오피스 조회·메시지 전송 | [모바일 웹](development/MOBILE-WEB.md) |
 | 실행 구조·저장·IPC·보안 확인 | [아키텍처](development/ARCHITECTURE.md) |
-| CPU·메모리 경량화 계획 | [측정과 경량화 설계 — 제안](development/PERFORMANCE-DESIGN.md) |
+| 여러 컴퓨터의 Office 연결 | [여러 Office 베타](development/MULTI-OFFICE.md) |
+| CPU·메모리 경량화와 상주 예산 | [측정과 경량화 설계](development/PERFORMANCE-DESIGN.md) |
 | 외부 코드 도입·업데이트 판단 | [레퍼런스 감사](research/INGESTION-REFERENCE-AUDIT.md) |
 | macOS 설치·DMG·배포 파이프라인 | [macOS 배포](development/MACOS-RELEASE.md) |
 | 실행과 검증 | [루트 README](../README.md), [검증 기록](development/QA.md), [MCP 연결](development/MCP.md) |
-| 시각 방향 비교 | [테마 시안](research/design/office-themes-2026-10-04.md) |
+| 시각 방향 비교 | [테마 시안](research/design/office-themes-2026-10-04.md), [앱 아이콘 시안](research/design/app-icons-2026-10-13/README.md) |
 
 각 폴더의 [golden 안내](golden/README.md), [development 안내](development/README.md), [research 안내](research/README.md)에 문서 역할과 추가 기준을 적었다.
 

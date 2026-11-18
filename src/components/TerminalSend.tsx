@@ -1,112 +1,262 @@
-import { useState } from 'react';
+import { useRef } from 'react';
 import { CornerDownLeft, Loader, Terminal } from 'lucide-react';
-import type { TerminalTarget } from '../shared/types';
+import type { SendResult, TerminalTarget } from '../shared/types';
 import { m } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
+import { platformKeys } from '../lib/platform';
+import { useComposerSend, type ComposerSender } from '../lib/useComposerSend';
+import { api } from '../lib/api';
+import { imageBlock } from '../shared/attachments';
+import { DraftConfirm } from './DraftConfirm';
+import { ImageAttachButton, ImageStrip, useImageInput } from './ComposerImages';
+import { TerminalDraftPreview } from './TerminalDraftPreview';
+import { useTerminalDraft } from '../lib/useTerminalDraft';
+import { previewsTarget } from '../lib/terminalDraft';
+
+const quiet = () => {};
 
 export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
 
 /** One line naming where the text goes, shared by the card and the bubble quick reply. */
 export function targetLine(target: TerminalTarget, privacy: boolean) {
-  const host = HOSTS[target.kind];
+  const host = target.codexRemote
+    ? m().federation.codexRemoteRoute
+    : target.desktop
+      ? 'Codex Desktop'
+      : HOSTS[target.kind];
+  if (target.remoteOffice)
+    return `${privacy ? m().federation.remoteOffice : target.remoteOffice} · ${host}`;
+  if (target.desktop) return host;
   if (target.queues) return m().terminal.queueLine(host);
   return privacy || !target.label ? host : `${host} · ${target.label}`;
 }
 
 export function targetPlaceholder(target: TerminalTarget) {
   const text = m().terminal.placeholder;
+  if (target.desktop) return text.desktop;
   if (target.queues) return text.queues;
-  if (!target.canSend) return target.status === 'busy' ? text.busy : text.notWaiting;
-  return text.direct(HOSTS[target.kind]);
+  if (target.tabOnly) return text.tabOnly;
+  if (!target.canSend) return text.notWaiting;
+  // Mid-turn Claude queues what is typed, so a follow-up can steer the work in progress.
+  return target.status === 'busy' ? text.busy : text.direct(HOSTS[target.kind]);
 }
 
 /**
  * A follow-up typed into the colleague's live terminal, exactly as if typed there.
- * Desktop only, on unless turned off in Settings; the main process re-checks the terminal and its idle state.
+ * Desktop only, on unless turned off in Settings; the main process re-checks the terminal and its state.
+ * The box is always open to writing: whether it can go now (no terminal found, a question on
+ * screen) is checked again on send, and a refusal says why while the text stays.
  */
 export function TerminalSend({
   target,
   enabled,
   privacy,
   onSend,
+  onJump,
+  chat = false,
+  draftKey,
+  remoteOffice,
+  onRefresh,
+  draftPreview,
 }: {
-  target: TerminalTarget;
+  /** Where it goes, as last seen; null while none was found (the send looks again). */
+  target: TerminalTarget | null;
   enabled: boolean;
   privacy: boolean;
-  onSend: (text: string) => Promise<void>;
+  onSend: ComposerSender;
+  /** Brings the session's terminal to the front (offered when its text can't be cleared). */
+  onJump?: () => void;
+  /** The card's chat box: Enter sends, Shift+Enter breaks the line, and it grows as you type. */
+  chat?: boolean;
+  /** Stable colleague identity, independent of the terminal's availability or label. */
+  draftKey: string;
+  remoteOffice?: string;
+  onRefresh?: () => void;
+  /**
+   * Shows what sits in the session's terminal input box (typed there, not sent) above this box,
+   * with [Send as is] and [Edit in card]. `onSubmitted` gets the text that went, for its receipt.
+   */
+  draftPreview?: {
+    id: string;
+    notify: (message: string) => void;
+    onSubmitted: (text: string, startedAt: number, logical?: string) => void;
+  };
 }) {
   const { t } = useI18n();
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-  const host = HOSTS[target.kind];
+  const reply = useComposerSend(onSend, (sent) => reply.clearText(sent), draftKey);
+  const { text, sending, error, draft, attached } = reply;
+  // Images only where the destination takes them (desktop, this office, a target that says so).
+  const block = imageBlock(target, { desktop: !!api.attachImage, remote: !!remoteOffice });
+  const asPaths = target?.images === 'path';
+  const dropping = useImageInput(attached, block);
+  const field = useRef<HTMLTextAreaElement>(null);
+  // Read only while this card shows a box a send could reach, nothing hides it, and the card is
+  // neither sending nor asking about that very text (DraftConfirm shows it then).
+  const box = useTerminalDraft(
+    draftPreview?.id ?? null,
+    enabled && !privacy && !sending && !draft && !remoteOffice && previewsTarget(target),
+    {
+      notify: draftPreview?.notify ?? quiet,
+      onSubmitted: draftPreview?.onSubmitted ?? quiet,
+    },
+  );
+  const host = target?.desktop
+    ? 'Codex Desktop'
+    : target
+      ? HOSTS[target.kind]
+      : t.terminal.terminal;
   if (!enabled)
     return (
       <p className="terminal-send-hint">
         <Terminal size={12} />
-        {t.terminal.offHint(target.queues ? t.terminal.runningCodex : t.terminal.runningIn(host))}
+        {target?.tabOnly
+          ? t.terminal.placeholder.tabOnly
+          : t.terminal.offHint(
+              target?.desktop
+                ? t.terminal.runningDesktop
+                : target?.queues
+                  ? t.terminal.runningCodex
+                  : target
+                    ? t.terminal.runningIn(host)
+                    : t.terminal.runningSomewhere,
+            )}
       </p>
     );
-  const waiting = !target.canSend;
-  const submit = async () => {
-    if (!text.trim() || waiting || sending) return;
-    setSending(true);
-    setError('');
-    try {
-      await onSend(text);
-      setText('');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+  // Not taking input as last seen (or not found): still written and sent; the desktop app
+  // checks again and says why when it cannot.
+  const submit = () => {
+    if (!remoteOffice || target?.canSend || target?.canPrepare) void reply.submit();
   };
-  return (
-    <form
-      className="terminal-send"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
+  const preview = draftPreview && (
+    <TerminalDraftPreview
+      view={box.view}
+      notice={box.notice}
+      submitting={box.submitting}
+      imported={
+        box.view?.kind === 'draft' &&
+        box.view.logical !== undefined &&
+        reply.replaces === box.view.text
+      }
+      onSubmit={() => void box.submit()}
+      onImport={() => {
+        // Only the text as typed: rows the box merely wrapped would split words, paths, URLs.
+        if (box.view?.kind !== 'draft' || box.view.logical === undefined) return;
+        reply.importDraft(box.view.logical, box.view.text);
+        field.current?.focus();
       }}
-    >
-      <textarea
-        aria-label={t.terminal.messageLabel(host)}
-        rows={2}
-        maxLength={4000}
-        value={text}
-        placeholder={
-          waiting
-            ? targetPlaceholder(target)
-            : `${targetPlaceholder(target)} · ${t.terminal.sendShortcut}`
-        }
-        onChange={(e) => setText(e.target.value)}
+      onJump={target?.canFocus ? onJump : undefined}
+    />
+  );
+  return (
+    <>
+      {preview}
+      <form
+        className={`terminal-send ${chat ? 'terminal-send-chat' : ''} ${remoteOffice ? 'terminal-send-remote' : ''} ${dropping.over ? 'composer-drop' : ''}`}
+        onPaste={dropping.onPaste}
+        onDragOver={dropping.onDragOver}
+        onDragLeave={dropping.onDragLeave}
+        onDrop={dropping.onDrop}
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            void submit();
+          // Esc drops an open question about the composer's text; the message stays.
+          if (e.key === 'Escape' && draft && !e.nativeEvent.isComposing) {
+            e.stopPropagation();
+            reply.cancel();
           }
         }}
-      />
-      <div className="terminal-send-bar">
-        <small>
-          <Terminal size={11} />
-          {targetLine(target, privacy)}
-          {waiting && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
-        </small>
-        <button
-          className="button primary"
-          type="submit"
-          disabled={waiting || sending || !text.trim()}
-        >
-          {sending ? <Loader size={13} className="now-spin" /> : <CornerDownLeft size={13} />}
-          {t.terminal.send}
-        </button>
-      </div>
-      {error && (
-        <small className="terminal-send-error" role="alert">
-          {error}
-        </small>
-      )}
-    </form>
+      >
+        <textarea
+          ref={field}
+          aria-label={t.terminal.messageLabel(host)}
+          rows={chat ? 1 : 2}
+          maxLength={4000}
+          value={text}
+          placeholder={`${target ? targetPlaceholder(target) : t.terminal.placeholder.unknown} · ${chat ? t.terminal.replyKeys : platformKeys(t.terminal.sendShortcut)}`}
+          onChange={(e) => reply.setText(e.target.value)}
+          onKeyDown={(e) => {
+            const sends = chat ? !e.shiftKey : e.metaKey || e.ctrlKey;
+            if (e.key === 'Enter' && sends && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <ImageStrip attached={attached} privacy={privacy} block={block} asPaths={asPaths} />
+        <div className="terminal-send-bar">
+          <small>
+            <Terminal size={11} />
+            {remoteOffice
+              ? `${remoteOffice} · ${target?.codexRemote ? t.federation.codexRemoteRoute : target?.canSend ? t.federation.sendReady : t.federation.sendUnavailable}`
+              : target
+                ? targetLine(target, privacy)
+                : t.terminal.lookingAgain}
+            {target && !target.queues && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
+          </small>
+          <ImageAttachButton
+            attached={attached}
+            block={block}
+            asPaths={asPaths}
+            disabled={sending}
+          />
+          <button
+            className="button primary"
+            type="submit"
+            disabled={
+              sending ||
+              !reply.ready ||
+              attached.uploading ||
+              (!!remoteOffice && !(target?.canSend || target?.canPrepare))
+            }
+          >
+            {sending ? <Loader size={13} className="now-spin" /> : <CornerDownLeft size={13} />}
+            {target?.canPrepare ? t.federation.connectAndSend : t.terminal.send}
+          </button>
+        </div>
+        {remoteOffice && !target?.canSend && (
+          <small className="terminal-send-unavailable" role="status">
+            {target?.canPrepare
+              ? t.federation.codexConnectHint
+              : target?.codexRemote
+                ? t.federation.codexRemoteUnavailable
+                : t.federation.sendUnavailable}
+          </small>
+        )}
+        {remoteOffice && onRefresh && (
+          <button
+            className="terminal-send-refresh"
+            type="button"
+            disabled={sending}
+            onClick={onRefresh}
+          >
+            {t.federation.checkTarget}
+          </button>
+        )}
+        {draft && (
+          <DraftConfirm
+            draft={draft}
+            sending={sending}
+            privacy={privacy}
+            onJump={target?.canFocus ? onJump : undefined}
+            onConfirm={() => void reply.confirm()}
+            onSendDraft={() => void reply.sendDraft()}
+            onCancel={reply.cancel}
+          />
+        )}
+        {error && (
+          <small className="terminal-send-error" role="alert">
+            {error}
+            {onJump && target?.canFocus && (
+              <button type="button" className="terminal-send-jump" onClick={onJump}>
+                <Terminal size={11} />
+                {t.terminal.openTerminal}
+              </button>
+            )}
+          </small>
+        )}
+      </form>
+    </>
   );
 }

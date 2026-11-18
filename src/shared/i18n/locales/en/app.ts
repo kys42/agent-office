@@ -4,10 +4,17 @@ export const app = {
   tabs: {
     office: { title: 'Our Office', short: 'Office' },
     memory: { title: 'Memory Drawer', short: 'Memory' },
+    outputs: { title: 'Outputs', short: 'Outputs' },
     activity: { title: 'Activity', short: 'Activity' },
     settings: { title: 'Connections & Settings', short: 'Settings' },
   },
   mainMenu: 'Main menu',
+  sidebarToggle: 'Sidebar',
+  resizeSidebar: 'Sidebar width',
+  resizeDock: 'Right column width',
+  resizeHint: 'Drag to resize · double-click for the default width',
+  hideSidebar: 'Hide the sidebar',
+  showSidebar: 'Show the sidebar',
   close: 'Close',
   toast: {
     demoRefresh: 'This is the demo office. Exit the demo to see your real connections.',
@@ -16,7 +23,7 @@ export const app = {
     returned: 'Set up a desk in the office',
     attentionOnly: 'Clear questions with “Got it” on the work card',
     noUnread: 'No unread results from this teammate',
-    markedRead: (n: number) => `Marked ${n} ${n === 1 ? 'update' : 'updates'} as read`,
+    markedRead: 'Marked their new results as read',
     hidden: 'Hidden until their next chat',
     shown: 'Back in view',
     unpinned: 'Unpinned',
@@ -24,16 +31,14 @@ export const app = {
     dismiss: 'Dismiss notification',
   },
   header: {
-    inbox: 'Inbox',
-    openInbox: 'Open Inbox',
-    inboxTitle: 'Final replies and questions from your teammates',
     openUsage: 'Open Usage',
     usageTitle: 'Usage limits and session costs',
     showContent: 'Show content',
     hideContent: 'Hide screen content',
     hideContentTitle: 'Hide screen content · for screen sharing',
-    mini: 'Desk pet',
-    miniTitle: 'Desk pet · floats small on your desktop and unfolds into a desk row when clicked',
+    /** The dock button names the look it goes back to (dock.view.looks). */
+    miniTitle: (look: string) =>
+      `Back to the desktop dock · ${look}, as you left it · switch looks from its View button`,
   },
   demoBanner: {
     text: 'Demo office · everything here is sample data',
@@ -45,7 +50,7 @@ export const app = {
     attention: (n: number) => `${n} waiting on you`,
     results: (n: number) => `${n} new ${n === 1 ? 'result' : 'results'}`,
     viewOne: 'Take a look',
-    viewInbox: 'View in Inbox',
+    viewOffice: 'See the office',
     close: 'Close summary',
   },
   loading: {
@@ -67,25 +72,32 @@ export const app = {
     toLive: 'Back to live',
     toDemo: 'Try the demo',
   },
+  sidebar: {
+    spaces: 'Spaces',
+    todo: 'To do',
+    projects: 'Projects',
+    records: 'Records',
+    hiddenProject: 'Project',
+  },
+  toolbar: {
+    zoneCount: (n: number) => `${n} ${n === 1 ? 'teammate' : 'teammates'}`,
+    officeSubtitle: (projects: number, desks: number) =>
+      `${projects} ${projects === 1 ? 'project' : 'projects'} · ${desks} ${desks === 1 ? 'desk' : 'desks'}`,
+  },
   moveZone: 'Move to a zone',
   help: {
     title: 'Keyboard shortcuts',
     find: { label: 'Find', hint: 'Teammates, records, and commands in one place' },
     next: { label: 'Next up', hint: 'Waiting teammates → new results → working' },
     previous: { label: 'Previous', hint: '' },
-    markRead: { label: 'Mark as read', hint: "The selected teammate's unread updates" },
-    inbox: { label: 'Inbox', hint: 'Open / close' },
+    markRead: {
+      label: 'Mark as read',
+      hint: "The selected teammate's new results, right away · a card left open reads them too",
+    },
     zones: { label: 'Office · Lounge · Archive', hint: '' },
     zoom: { label: 'Fit · Zoom in · Zoom out', hint: 'In the office' },
-    close: { label: 'Close', hint: 'Work card · Inbox · windows' },
+    close: { label: 'Close', hint: 'Work card · windows' },
     note: 'Single-key shortcuts are paused while you type.',
-  },
-  panelTabs: {
-    label: 'Right panel view',
-    roster: 'Teammates',
-    inbox: 'Inbox',
-    closeInbox: 'Close Inbox',
-    closeTitle: 'Close · Esc',
   },
   activity: {
     eyebrow: 'Timeline',

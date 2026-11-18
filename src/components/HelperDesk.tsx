@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type DOMAttributes, type MouseEvent } from 'react';
 import { EyeOff } from 'lucide-react';
 import { MOODS, type Mood, type Session } from '../shared/types';
 import { helperName, sessionName } from '../shared/office';
 import { stackLead } from '../shared/presentation';
+import { isTeammate } from '../shared/residents';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { VeilButton } from './VeilButton';
@@ -18,6 +19,7 @@ export function HelperDesk({
   news,
   privacy,
   className = '',
+  grip,
   onClick,
   onVeil,
 }: {
@@ -29,7 +31,9 @@ export function HelperDesk({
   news: boolean;
   privacy: boolean;
   className?: string;
-  onClick: () => void;
+  /** Pointer handlers that let this desk carry its zone (tiny). */
+  grip?: DOMAttributes<HTMLElement>;
+  onClick: (e: MouseEvent) => void;
   /** Hide just this helper (absent while it needs the person). */
   onVeil?: () => void;
 }) {
@@ -46,8 +50,11 @@ export function HelperDesk({
         style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
         aria-label={t.desk.helper.label(privacy ? s.provider : sessionName(s), responded)}
         title={
-          privacy ? undefined : `${sessionName(s)} · ${s.relation?.role || t.desk.helper.name}`
+          privacy
+            ? undefined
+            : `${sessionName(s)} · ${s.relation?.role || (isTeammate(s) ? t.desk.teammate.tag : t.desk.helper.name)}`
         }
+        {...grip}
         onClick={onClick}
       >
         <Sprite session={s} provider={s.provider} mood={mood} size={44} />
@@ -89,6 +96,9 @@ export function HelperStack({
   onOpen,
   canVeil = () => true,
   onVeil,
+  direct = false,
+  grip,
+  swallowClick,
 }: {
   members: Session[];
   parentId: string;
@@ -103,11 +113,24 @@ export function HelperStack({
   /** Hide one helper from the list (never one that needs the person). */
   canVeil?: (s: Session) => boolean;
   onVeil?: (s: Session) => void;
+  /**
+   * No list: a click opens the front helper's card right away. The tiny dock draws the stack
+   * at ~0.41 scale in a ~100px window, where the list would be unreadable and clipped.
+   */
+  direct?: boolean;
+  /** Pointer handlers that let this desk carry its zone (tiny). */
+  grip?: DOMAttributes<HTMLElement>;
+  /** True when the click only ends a drag (of the zone), so it opens nothing. */
+  swallowClick?: (e: MouseEvent) => boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // A list left open must not come back when the dock returns from tiny.
+  useEffect(() => {
+    if (direct) setOpen(false);
+  }, [direct]);
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
@@ -138,7 +161,9 @@ export function HelperStack({
   const anyCalling = members.some(calling);
   const anyNews = members.some(news);
   // Helpers often share a role (e.g. "explorer"): keep each one's own name next to it.
-  const role = (s: Session) => (privacy ? '' : (s.relation?.role ?? ''));
+  // An agent-team member goes by its own name: its tag stands where a role would.
+  const role = (s: Session) =>
+    privacy ? '' : s.relation?.role || (isTeammate(s) ? t.desk.teammate.tag : '');
   const name = (s: Session) => (privacy ? t.desk.helper.name : sessionName(s));
   const label = (s: Session) => (role(s) ? `${role(s)} · ${name(s)}` : name(s));
   const count = members.length;
@@ -160,10 +185,21 @@ export function HelperStack({
         data-members={members.map((s) => s.id).join(' ')}
         data-furniture="helper-desk"
         data-solid
-        aria-expanded={open}
-        aria-label={t.desk.helper.stackLabel(count, anyCalling)}
+        aria-expanded={direct ? undefined : open}
+        aria-label={
+          direct
+            ? t.desk.helper.stackOpen(count, anyCalling, name(lead))
+            : t.desk.helper.stackLabel(count, anyCalling)
+        }
         title={privacy ? undefined : members.map(label).join('\n')}
-        onClick={() => setOpen((v) => !v)}
+        // Direct: the lead is the one drawn in front — calling or erroring first, then working,
+        // then the most recently active — so the click opens whoever most needs a look now.
+        {...grip}
+        onClick={(e) => {
+          if (swallowClick?.(e)) return;
+          if (direct) onOpen(lead.id);
+          else setOpen((v) => !v);
+        }}
       >
         <span className="helper-stack-back" aria-hidden="true">
           <i />
@@ -176,7 +212,7 @@ export function HelperStack({
         <b>{t.desk.helper.stackCount(count)}</b>
         {anyNews && <i className="helper-news" />}
       </button>
-      {open && (
+      {open && !direct && (
         <ul className="helper-stack-list" data-solid aria-label={t.desk.helper.stackList}>
           {members.map((s) => {
             return (

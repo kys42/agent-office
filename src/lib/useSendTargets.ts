@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TerminalTarget } from '../shared/types';
 import { api, isDesktop } from './api';
 import { isPageHidden, onPageVisibility } from './visibility';
@@ -30,22 +30,62 @@ export function useSendTargets(
   const active = enabled && isDesktop && !!api.terminals && key !== '';
   const [targets, setTargets] = useState<Targets>({});
   const [tick, setTick] = useState(0);
+  // One missed lookup (a terminal busy redrawing, a slow host) keeps the target last seen: the
+  // reply box does not blink away. Two in a row, and it is gone.
+  const misses = useRef<Record<string, number>>({});
+  const known = useRef<Targets>({});
+  known.current = targets;
+  const refresh = useRef<() => void>(() => {});
   useEffect(() => {
     if (!active) return;
     let valid = true;
-    lookup(key.split('\n'))
-      .then((found) => valid && setTargets(found))
-      .catch(() => {
-        /* keep what is known; the next poll tries again */
-      });
+    let pending = false;
+    let again = false;
+    const load = () => {
+      if (pending) {
+        again = true;
+        return;
+      }
+      pending = true;
+      void lookup(key.split('\n'))
+        .then((found) => {
+          if (!valid) return;
+          // Counted here, not in the state updater (which may run twice).
+          const next: Targets = { ...found };
+          for (const [id, target] of Object.entries(found)) {
+            if (target) misses.current[id] = 0;
+            else if (known.current[id] && (misses.current[id] = (misses.current[id] ?? 0) + 1) < 2)
+              next[id] = known.current[id];
+          }
+          setTargets(next);
+        })
+        .catch(() => {
+          /* keep what is known; the next poll tries again */
+        })
+        .finally(() => {
+          pending = false;
+          if (valid && again) {
+            again = false;
+            load();
+          }
+        });
+    };
+    refresh.current = load;
     return () => {
       valid = false;
+      refresh.current = () => {};
     };
+  }, [active, key]);
+  useEffect(() => {
+    // Activity requests a refresh without discarding a slow lookup for the same sessions.
+    // Coalesce updates while it runs; only a changed session list invalidates its result.
+    refresh.current();
   }, [active, key, stamp, tick]);
   const wanted = new Set(active ? key.split('\n') : []);
   const shown: Targets = {};
   for (const [id, target] of Object.entries(targets)) if (wanted.has(id)) shown[id] = target;
-  const waiting = pollBusy && Object.values(shown).some((t) => t && !t.canSend);
+  const waiting =
+    pollBusy && Object.values(shown).some((t) => t && (!t.canSend || t.status === 'busy'));
   useEffect(() => {
     if (!active) return;
     const check = () => {
@@ -58,13 +98,15 @@ export function useSendTargets(
       stop();
     };
   }, [active, waiting]);
-  /** After sending, show the turn as started until the session reports idle again. */
+  /** After sending, show the turn as under way until the session reports again. */
   const markSent = useCallback((id: string) => {
     setTargets((all) => {
       const target = all[id];
-      if (!target || target.queues) return all;
-      return { ...all, [id]: { ...target, status: 'busy', canSend: false } };
+      if (!target || target.queues || target.status === 'busy') return all;
+      // A follow-up may still go in: Claude queues it for the turn just started.
+      return { ...all, [id]: { ...target, status: 'busy' } };
     });
   }, []);
-  return { targets: shown, markSent };
+  const refreshTargets = useCallback(() => refresh.current(), []);
+  return { targets: shown, markSent, refreshTargets };
 }

@@ -26,7 +26,7 @@ so you can see who's working, who's waiting on you, and what just finished witho
 
 ## 👋 Your first visit
 
-The first launch includes a four-step tour: meet your teammates, catch up on questions and results, try the desk pet, and make the office yours. Skip it or finish it once; it stays out of the way next time. **Guide** in the sidebar or the **⌘K** command palette opens the tour and feature guide again. Feature cards take you straight to the Inbox, character settings, Memory, Usage and other screens. The sample office has its own guide and does not complete your live-office tour.
+The first launch includes a four-step tour: meet your teammates, catch up on questions and results, try the desk pet, and make the office yours. Skip it or finish it once; it stays out of the way next time. **Guide** in the sidebar or the **⌘K** command palette opens the tour and feature guide again. Feature cards take you straight to character settings, Memory, Usage and other screens. The sample office has its own guide and does not complete your live-office tour.
 
 ## 🖥️ A team that lives on your desktop
 
@@ -58,7 +58,7 @@ Agent Office isn't another window to keep checking. It docks to your desktop, st
 When three agents are running in five terminals across two worktrees, the hard part isn't the code — it's **knowing what needs you right now**. Agent Office reads the session logs your tools already write, and gives every session a desk:
 
 - 🙋 **Waiting on you** — a teammate raises a hand when a session asks a question or needs input.
-- 📬 **Results to review** — final replies land in an Inbox instead of scrolling away in a terminal.
+- 📬 **Results to review** — a finished reply puts a dot on that teammate instead of scrolling away in a terminal; open their card or message them and it clears.
 - ⌨️ **Working** — live progress shows up in speech bubbles, in plain words rather than raw tool names.
 - ☕ **Standing by → Off duty** — after a reply a teammate stands by for 30 minutes, then rests. Four quiet hours later they clock off to the Lounge, and after a week to the Archive.
 
@@ -73,7 +73,7 @@ No hooks to install, no wrappers around your CLI, no cloud. Your sources are ope
 
 When you want the whole picture, open the full office: every project on its own floor, a roster ordered by what needs you, and a work card for each teammate.
 
-<img src="docs/images/en/hero.gif" alt="Tour of the big office: opening a work card, searching with the command palette, and the Inbox" width="100%" />
+<img src="docs/images/en/hero.gif" alt="Tour of the big office: opening a work card and searching with the command palette" width="100%" />
 
 <table>
   <tr>
@@ -81,32 +81,33 @@ When you want the whole picture, open the full office: every project on its own 
       <img src="docs/images/en/detail.png" alt="Work card" /><br/>
       <b>Work card</b><br/>
       Click any teammate for a side panel that never covers the office: what you asked, live progress, the final reply, tool history on demand, branch & worktree, tokens and API-equivalent cost, PR/issue cards and your own notes.
+      Chat drafts are saved on this Mac for each session and shared with the popup card. Close and reopen a card to continue writing; a successful send clears only the text that was sent.
     </td>
     <td width="50%" valign="top">
-      <img src="docs/images/en/inbox.png" alt="Inbox" /><br/>
-      <b>Inbox</b><br/>
-      Final replies first. Questions are split out as <i>needs a look</i>, everything else stays in the full history. Read state survives restarts, and bubbles stay up for 3 hours by default.
+      <img src="docs/images/en/palette.png" alt="Command palette" /><br/>
+      <b>⌘K command palette & keyboard triage</b><br/>
+      Jump to any teammate, record or command. <kbd>J</kbd>/<kbd>K</kbd> to move, <kbd>R</kbd> to read, <kbd>?</kbd> for every shortcut — plus a “while you were away” digest when you come back.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/images/en/palette.png" alt="Command palette" /><br/>
-      <b>⌘K command palette & keyboard triage</b><br/>
-      Jump to any teammate, record or command. <kbd>J</kbd>/<kbd>K</kbd> to move, <kbd>R</kbd> to read, <kbd>I</kbd> for the Inbox, <kbd>?</kbd> for every shortcut — plus a “while you were away” digest when you come back.
-    </td>
-    <td width="50%" valign="top">
       <img src="docs/images/en/lounge.png" alt="Lounge" /><br/>
       <b>Lounge & Archive</b><br/>
       Teammates with no new activity clock off to the sofas after 4 hours and move to the Archive after 7 days — both configurable. Pin anyone to keep them at their desk.
+    </td>
+    <td width="50%" valign="top">
+      <b>One dot per teammate</b><br/>
+      You can't tell from here whether you already read a reply in the terminal, so the office only tracks one thing: have you seen their latest result? A dot in the list and a mark on the desk say so — no counts. Opening their card, sending them a message or jumping to their terminal clears it. Bubbles stay up for 3 hours by default.
     </td>
   </tr>
 </table>
 
 ### 💬 Jump in and reply
 
+- One **Start a session** sheet starts a new session, continues a conversation or forks it, in **Orca**, **tmux**, macOS **Terminal** or as a copied command. Each place says up front whether it can take it and why not; the last one you picked is the default. Open it from a project's **+** or a work card's **Continue in a terminal** (the card's main button opens it when there is no terminal to jump to). Every start asks a native confirmation first. tmux keeps running after you close the terminal; it needs tmux and the agent's CLI.
 - Claude Code sessions running in **Orca** or **tmux** get a *Jump to Orca / tmux* button on their work card.
-- **Send to terminal** (desktop only, on by default) lets you follow up from the work card or a speech bubble's reply button. Turn it off in Settings any time; turning it back on asks you to confirm in a native dialog. Idle Claude Code sessions get your text typed into their own terminal; live Codex CLI sessions receive it through `codex queue`.
-- It never approves permission prompts, only types into an idle session that owns its terminal, and tells you when it couldn't confirm delivery. How targets are verified: [Terminal connection](docs/development/TERMINAL.md).
+- **Send to terminal** (desktop only, on by default) lets you follow up from the work card or a speech bubble's reply button. Turn it off in Settings any time; turning it back on asks you to confirm in a native dialog. Claude Code sessions get your text typed into their own terminal (queued for the current turn while working, held back while a permission prompt is open); live Codex CLI sessions receive it through `codex queue`.
+- It never approves anything on its own. Answering questions, plan approvals and permission prompts from the work card is a separate opt-in (off by default, asked once per kind): the app presses the dialog's own keys only when the screen shows exactly one open call — the one on the card — and only for the one-time choice you press (allow once, deny, approve a plan with edits still asked); choices that keep allowing stay in the terminal. Otherwise it only types into Claude's own prompt (resting or mid-task, checked on screen right before Enter) in a session that owns its terminal, and tells you when it couldn't confirm delivery. How targets are verified: [Terminal connection](docs/development/TERMINAL.md).
 
 ### Everything else
 
@@ -118,8 +119,12 @@ When you want the whole picture, open the full office: every project on its own 
 | 🫥 **Hide a teammate** | The eye button hides a desk until their next real conversation. Questions and errors still break through. |
 | 💭 **Bubbles with meaning** | My request, thinking, progress, final reply, needs your reply, needs a look — each has its own shape and expands in place. |
 | 📋 **Select, copy & open links** | Drag across a bubble to select and copy its words, or copy a whole expanded bubble in one click. Web links in bubbles and the conversation open in your default browser (hover shows the real address); anything that isn't http(s) stays plain text. Right-click selected text for Copy / Select All, or a link for Open / Copy Link, in every window. |
+| 🧾 **Many bubbles at once** | In a work card's chat, right-click a bubble (or use its hover button) for **Select from here**, then click where it ends to take everything between (Shift+click adjusts, Esc cancels). Copy them all with `You:` / teammate-name headers, or **Send to a teammate** to put them in another teammate's chat box as a draft — their card opens and you send it yourself. Tool logs and progress notes are included only when shown. |
 | 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
 | 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
+| 🔖 **Message bookmarks** | Bookmark an important message in a conversation; Memory and the teammate’s Notes tab collect them with context and short annotations; open the conversation right at the saved message, or read the saved conversation in its own window beside the office while you work. |
+| 📦 **Outputs** | Documents, pages and images a teammate newly created (md, html, pdf, csv, images…) and Claude Artifact links gather in the **Outputs** tab beside Memory, by project and teammate. Files that were only edited, and code, are left out. Preview markdown in a reader window and HTML in a script-free sandbox, open in the default app, show in Finder or copy the path. The work card’s Details lists the teammate’s outputs too. |
+| ↔ **Place your teams** | Drag a project sign or floor flag to move its desks together across the row. Positions are remembered; reset from the dock toolbar. |
 | 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |
 | 📊 **Usage & cost** | Subscription limits for Claude and Codex on demand, plus per-session tokens and API-equivalent cost. |
 | 🔗 **PR & issue cards** | GitHub links found in a session become cards with live title and state via your existing `gh` login. |
@@ -127,6 +132,8 @@ When you want the whole picture, open the full office: every project on its own 
 | 🌐 **English & 한국어** | Follows your system language (English fallback). Switch any time in Settings. |
 
 ## 🚀 Quick start
+
+Windows preview: `npm ci` → `npm run package:win`. Open the generated `Agent Office.exe` under `release/windows-*/`. This is an unsigned portable preview; see [Windows support and limits](docs/development/WINDOWS.md) for the supported features, data path and verification commands.
 
 > Built and tested on **Apple Silicon macOS** with **Node.js 24+**.
 
@@ -138,18 +145,25 @@ npm run build
 npm start
 ```
 
-Package it as a macOS app:
+Package a local preview for testing:
 
 ```bash
-npm run package
+npm run package:preview
 open "release/Agent Office-darwin-arm64/Agent Office.app"
 ```
 
-> The preview uses ad-hoc signing; it is not Developer ID signed or Apple-notarized.
+> Preview builds use ad-hoc signing. Keep an installed signed app on the signed release path; replacing it with a preview can cause permission prompts again. For repeatable Developer ID signing and Apple notarization, see [macOS release setup](docs/development/MACOS-RELEASE.md). Credentials must be configured before using signed releases.
 
-Create an installer with `npm run package:dmg`, then verify the app installed from it with `npm run test:package`. The DMG includes an Applications shortcut and installation instructions. Manual builds and version tags produce arm64 / Intel artifacts through [macOS DMG Preview](.github/workflows/macos-dmg.yml); see the [release guide](docs/development/MACOS-RELEASE.md).
+Create an installer with `npm run package:dmg`, then verify the app installed from it with `npm run test:package`. The DMG includes an Applications shortcut and installation instructions. Manual preview builds produce arm64 / Intel artifacts through [macOS DMG Preview](.github/workflows/macos-dmg.yml). Version tags use [macOS Signed Release](.github/workflows/macos-signed.yml) with configured signing credentials; see the [release guide](docs/development/MACOS-RELEASE.md).
 
-Just want to look around? Run the browser preview with **synthetic demo data** — nothing on your machine is read:
+Just want to look around? Run only the UI with **synthetic demo data** (no collector):
+
+```bash
+npx vite --host 127.0.0.1
+# http://127.0.0.1:5173/?demo
+```
+
+For development with the local session collector, use:
 
 ```bash
 npm run dev
@@ -170,7 +184,7 @@ flowchart LR
   end
   subgraph WK["Collector · worker thread · every 5 s"]
     direction TB
-    AD["Provider adapters"] --> OP["Office Observation<br/>Protocol v1"] --> PO["Office policy<br/>zones · status · inbox · lifecycle"]
+    AD["Provider adapters"] --> OP["Office Observation<br/>Protocol v1"] --> PO["Office policy<br/>zones · status · results · lifecycle"]
   end
   CC & CX & OC --> AD
   PO --> DB[("office.sqlite<br/>+ FTS5")]
@@ -178,7 +192,7 @@ flowchart LR
   DB --> MCP["Read-only MCP server"] --> AG["Your agents"]
 ```
 
-Raw provider formats end at the adapters; the office only ever reads one shared protocol. Provider evidence, grouping and relationships, run state, inbox lifetime, and what isn't supported yet are documented separately — see [Docs](#-docs).
+Raw provider formats end at the adapters; the office only ever reads one shared protocol. Provider evidence, grouping and relationships, run state, notice lifetime, and what isn't supported yet are documented separately — see [Docs](#-docs).
 
 - **Electron main → sandboxed preload IPC → worker thread.** The renderer never touches files, processes or Node APIs.
 - **Observed, not assumed.** Status comes from what the logs show. A finished reply is never reported as “task done”, and a quiet session isn't declared dead.
@@ -224,6 +238,7 @@ Agent Office ships a **read-only** MCP server over the same database, so an agen
 | `office_search` | Keyword search across allowed session history |
 | `office_get_session` | Session detail with evidence and partial-collection flags |
 | `office_prepare_handoff` | Handoff Markdown for a given snapshot |
+| `office_list_bookmarks` | Messages you bookmarked, with the request that led to each |
 
 Requires Node 24+. If you moved the data directory, set `AGENT_OFFICE_DATA_DIR` for the MCP server too. Nothing is registered automatically, and existing configs are never overwritten. Search results are untrusted reference material — not instructions. A Codex TOML example lives in the [MCP guide](docs/development/MCP.md).
 
@@ -258,11 +273,13 @@ node scripts/readme-hero.mjs en  # big-office tour GIF (needs npm run dev + ffmp
 node scripts/readme-desktop.mjs en  # desktop scene PNG + GIF (needs npm run dev + ffmpeg)
 ```
 
+Local Electron smokes open their windows behind your work and never take focus (`AGENT_OFFICE_QUIET`). Steps that check real OS focus, and `test:cards`, run only in CI or with `AGENT_OFFICE_FOCUS_TESTS=1`.
+
 Tests use synthetic data and never modify your sources; only the live-connection UI smoke test reads local history.
 
 ## 🗺️ Roadmap
 
-Not built yet, and deliberately not faked in the UI: approving permission prompts or controlling sessions outside Orca/tmux, model-based summaries and semantic search, scheduled retros, teammates that grow over time, remote sync, and signing / notarization / auto-update.
+Not built yet, and deliberately not faked in the UI: automatic approvals, answering Codex prompts, controlling sessions outside Orca/tmux, model-based summaries and semantic search, scheduled retros, teammates that grow over time, account-based remote sync, and auto-update.
 
 ## 📄 License
 
@@ -280,3 +297,7 @@ The design docs are currently written in Korean.
 <br/>
 <sub>Made with 🧡 for everyone running more agents than they have monitors.</sub>
 </div>
+
+### Multi-office beta (desktop, opt-in)
+
+The same app can combine read-only observations from directly connected offices over LAN. It is off by default, uses a separate HTTPS API and peer configuration, and keeps remote content out of the local database. See [setup, isolation, and limitations](docs/development/MULTI-OFFICE.md). `npm run start:beta` opens the worktree build with an isolated development profile.

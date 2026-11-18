@@ -16,15 +16,87 @@ export const PET_SIZE = { width: 300, height: 350 };
 export const ROW_SCALE = 1;
 /** Station-space height of the row scene (tall-bubble headroom + station + zone label). */
 export const ROW_SCENE_HEIGHT = 376;
-/** A see-through band above the scene for the row's tools, so they never cover a bubble. */
-export const ROW_TOOLS_BAND = 44;
-export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
+/**
+ * See-through room above the scene (where the tools sat before the pill), so a stacked answer
+ * + request bubble fits: a bubble's bottom sits ROW_TOP + 58 = 162px below the scene's top,
+ * which leaves it 206px to the window's top. The desks stand on the window's bottom edge; the
+ * dock pill floats over the bottom of the scene instead of lifting it.
+ */
+export const ROW_TOP_ROOM = 44;
+export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOP_ROOM;
 /**
  * Floor version: no zone rugs or name cards under the desks, so the scene ends where the desk
  * legs meet the work area's bottom edge (FLOOR_TOP + 188) plus their contact shadow.
  */
 export const FLOOR_SCENE_HEIGHT = 296;
-export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
+export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOP_ROOM;
+
+/**
+ * Tiny (쪼꼬미) row and floor: the whole scene at about helper-desk size (68 of 164), with no
+ * bubbles, flags, rugs or name cards — just the desks, their status and a contentless dot.
+ */
+export const TINY_SCALE = 68 / 164;
+/**
+ * Tiny drops the bubble headroom: stations sit this far above the scene's top (a negative
+ * station row), so it starts just above the heads (pet at 62) with room for the dot.
+ */
+export const TINY_TOP = -36;
+/** Desk legs meet the floor at 188 (DESK_FOOT), plus their contact shadow. */
+export const TINY_FEET = 188 + 4;
+/**
+ * The tiny name tag sits over the desk's front (bench at 134, legs to 188): station-space top
+ * and height of its band (about 14px on screen: a 9px name in a small see-through chip). The
+ * desks keep standing on the window's bottom edge.
+ */
+export const TINY_NAME_TOP = 150;
+export const TINY_NAME_ROOM = 34;
+/**
+ * Without rugs and name cards the office row ends at the desk legs like the floor, so both
+ * tiny looks share one scene height (and one window height).
+ */
+export const TINY_SCENE_HEIGHT = TINY_TOP + TINY_FEET;
+/**
+ * See-through room above the tiny desks (the tiny pill floats over their feet). The desks keep
+ * the full size's effects, shrunk with the scene, so this leaves room for the highest of them:
+ * the arriving papers set off about 58 station units above a station (112 − 170, ≈ −94 in
+ * scene space, 39px on screen) and the full-heat flames reach above the head. The extra room is
+ * transparent and lets clicks through; the desks still stand on the window's bottom edge.
+ */
+export const TINY_TOP_ROOM = 44;
+export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOP_ROOM;
+/** The dock window's height for the office row or the floor, normal or tiny. */
+export const dockHeight = (floor: boolean, tiny: boolean) =>
+  tiny ? TINY_HEIGHT : floor ? FLOOR_HEIGHT : ROW_HEIGHT;
+
+/**
+ * The dock pill's spot: its centre as a fraction of the window's width, so it keeps its place
+ * on a wider or narrower screen. Anything unreadable is home.
+ *
+ * Home is the right end, where the tools sat before the pill. The pill floats over the desks'
+ * feet, and the desks (with their zone signs along the bottom) are centred in the window, so a
+ * centred pill would sit on a sign every time; the right end is usually empty. The person can
+ * still park it anywhere, and every look (row, floor, tiny) shares that one saved spot.
+ */
+export const PILL_HOME = 1;
+export function readPillSpot(raw: unknown): number {
+  const p = raw as { v?: unknown; x?: unknown } | null;
+  return p && typeof p === 'object' && p.v === 1 && typeof p.x === 'number' && Number.isFinite(p.x)
+    ? Math.min(1, Math.max(0, p.x))
+    : PILL_HOME;
+}
+/** Breathing room between the pill and the window's sides. */
+export const PILL_MARGIN = 8;
+/** The pill's left edge (px) for a centre fraction, kept whole inside the window. */
+export function pillLeft(spot: number, width: number, pill: number, margin = PILL_MARGIN): number {
+  const max = Math.max(margin, width - pill - margin);
+  return Math.round(Math.min(max, Math.max(margin, spot * width - pill / 2)));
+}
+
+/** Read `dock.json` (`{ v: 1, tiny }`); anything else is the normal size. */
+export function readDockPrefs(raw: unknown): { tiny: boolean } {
+  const p = raw as { v?: unknown; tiny?: unknown } | null;
+  return { tiny: !!p && typeof p === 'object' && p.v === 1 && p.tiny === true };
+}
 
 /** Keep a window fully inside a display's work area (shrinking it only if it cannot fit). */
 export function clampInto(b: Rect, area: Rect): Rect {
@@ -60,6 +132,58 @@ export function petBounds(feet: Point | null | undefined, area: Rect, size = PET
 }
 
 /**
+ * While a dialog (row, floor) or the 보기 menu (any look) is open, the dock window grows upward
+ * to these heights: the desks and the pet keep their bottom edge, so nothing on screen moves.
+ */
+export const DOCK_ROOM_HEIGHT = 760;
+export const PET_ROOM_HEIGHT = 560;
+/**
+ * The pet's window also grows sideways while it holds room: its ＋ popover (about 360px) and a
+ * dialog (the launch sheet) need more than the pet's 300px. See `petRoomRect`.
+ */
+export const PET_ROOM_WIDTH = 560;
+/** Which edge of its window the pet stands at (`.desk-pet-stage`): grown the other way. */
+export type PetSide = 'left' | 'right';
+/**
+ * A dock window grown upward to `height` (and leftward to `width`) for an open dialog or menu:
+ * the same bottom and right edges, taking only the room up to the work area's top and left
+ * side (never pushed down or right instead).
+ */
+export function roomyRect(b: Rect, area: Rect, height: number, width = b.width): Rect {
+  const h = Math.max(b.height, Math.min(height, b.y + b.height - area.y));
+  const w = Math.max(b.width, Math.min(width, b.x + b.width - area.x));
+  return { x: b.x + b.width - w, y: b.y + b.height - h, width: w, height: h };
+}
+/**
+ * The pet's window grown for room: upward like any dock window, and sideways to `width` —
+ * to the left (the pet standing at the window's right edge) when there is room there, else to
+ * the right (the pet at the left edge), whichever side has more when neither has enough. The
+ * pet keeps its spot on screen; `side` tells the page where to draw it.
+ */
+export function petRoomRect(
+  b: Rect,
+  area: Rect,
+  height: number,
+  width: number,
+): { rect: Rect; side: PetSide } {
+  const up = roomyRect(b, area, height);
+  const leftward = b.x + b.width - area.x;
+  const rightward = area.x + area.width - b.x;
+  const side: PetSide = leftward >= width || leftward >= rightward ? 'right' : 'left';
+  const w = Math.max(b.width, Math.min(width, side === 'right' ? leftward : rightward));
+  return { rect: { ...up, x: side === 'right' ? b.x + b.width - w : b.x, width: w }, side };
+}
+/**
+ * The pet's own box inside its window, which may hold room above and to one side: the pet's
+ * size at the bottom corner of `side` (where .desk-pet-stage draws it).
+ */
+export const petStand = (b: Rect, side: PetSide = 'right', size = PET_SIZE): Rect => ({
+  x: side === 'right' ? b.x + b.width - size.width : b.x,
+  y: b.y + b.height - size.height,
+  ...size,
+});
+
+/**
  * Read `desk-pet.json`: v2 stores the standing spot; the first format stored the top-left
  * of the original 132×148 window, converted here so upgrades keep the pet in place.
  */
@@ -71,9 +195,21 @@ export function readPetSpot(raw: unknown): Point | null {
 }
 
 /** The dock card: the colleague card (same as the big office's right panel) in its own window. */
-export const CARD_SIZE = { width: 420, height: 680 };
-/** Shorter than this, the card would be cramped above a desk; it opens beside it instead. */
-export const CARD_MIN_HEIGHT = 420;
+export const CARD_SIZE = { width: 480, height: 760 };
+/** The smallest the person can resize the card to (it still holds a header, a chat and a box). */
+export const CARD_MIN = { width: 380, height: 480 };
+/** A remembered card size (`card-size.json`), or null when it is not a sane one. */
+export function readCardSize(v: unknown): { width: number; height: number } | null {
+  const p = v as { width?: unknown; height?: unknown } | null;
+  const ok = (n: unknown, min: number) =>
+    typeof n === 'number' && Number.isFinite(n) && n >= min && n <= 4000;
+  return p && ok(p.width, CARD_MIN.width) && ok(p.height, CARD_MIN.height)
+    ? { width: Math.round(p.width as number), height: Math.round(p.height as number) }
+    : null;
+}
+/** Shorter than this, the card would be cramped above a desk; it opens beside it instead.
+ * The window's own minimum: a shorter placement would be grown down over the desk. */
+export const CARD_MIN_HEIGHT = 480;
 const CARD_GAP = 10;
 const CARD_MARGIN = 12;
 
@@ -107,4 +243,26 @@ export function cardBounds(anchor: Rect, area: Rect, size = CARD_SIZE): Rect {
   const right = anchor.x + anchor.width + CARD_GAP;
   const x = right + width <= inside.x + inside.width ? right : anchor.x - CARD_GAP - width;
   return clampInto({ x, y: anchor.y + anchor.height / 2 - height / 2, width, height }, inside);
+}
+
+/**
+ * The big office opened from a window on another display (the desk pet, the row, a card): the
+ * same size, at the same relative spot of the target work area (its share of the free room
+ * across and down, so a centred window stays centred and one flush to an edge stays there),
+ * kept whole inside it. Coordinates are DIPs, so scale factors need no maths here; a window
+ * bigger than the target area shrinks to fit it.
+ */
+export function moveOntoArea(b: Rect, from: Rect, to: Rect): Rect {
+  const width = Math.min(b.width, to.width);
+  const height = Math.min(b.height, to.height);
+  const share = (at: number, start: number, room: number) =>
+    room > 0 ? Math.min(1, Math.max(0, (at - start) / room)) : 0.5;
+  const fx = share(b.x, from.x, from.width - b.width);
+  const fy = share(b.y, from.y, from.height - b.height);
+  return {
+    width,
+    height,
+    x: Math.round(to.x + fx * (to.width - width)),
+    y: Math.round(to.y + fy * (to.height - height)),
+  };
 }

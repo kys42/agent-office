@@ -88,7 +88,7 @@ test('a shared bench is one long desk and zones never overlap along the line', (
   assert.equal(row.width, other.x + other.width);
 });
 
-test('helper desks follow the bench they belong to without splitting it', () => {
+test("helper desks sit right beside their colleague's desk; the long desk goes on after them", () => {
   const host = session(0);
   const mate = session(1);
   const helpers = [0, 1].map((i) =>
@@ -96,14 +96,23 @@ test('helper desks follow the bench they belong to without splitting it', () => 
   );
   const row = layoutRow([host, mate, ...helpers]);
   const zone = row.zones[0];
-  assert.equal(zone.benches.length, 1);
+  const [hostAt, mateAt] = [host, mate].map((s) => zone.stations.find((x) => x.id === s.id)!);
   assert.deepEqual(
-    zone.helpers.map((h) => h.parent),
-    [host.id, host.id],
+    zone.helpers.map((h) => [h.parent, h.x]),
+    [
+      [host.id, hostAt.x + STATION_WIDTH],
+      [host.id, hostAt.x + STATION_WIDTH + 73],
+    ],
   );
-  const benchEnd = zone.benches[0].x - 5 + 2 * STATION_WIDTH;
-  assert.ok(zone.helpers.every((h) => h.x >= benchEnd));
-  assert.ok(zone.helpers[1].x > zone.helpers[0].x);
+  // The same bench, in two pieces around the helpers.
+  assert.equal(mateAt.x, hostAt.x + STATION_WIDTH + 2 * 73);
+  assert.deepEqual(
+    zone.benches.map((b) => [b.key, b.members, b.shared]),
+    [
+      [zone.benches[0].key, [host.id], true],
+      [zone.benches[0].key, [mate.id], true],
+    ],
+  );
 });
 
 test('desks speak the same words in both views: a notice bubble, else live progress', () => {
@@ -291,6 +300,44 @@ test('a closed or expired bubble comes back only while the desk is pointed at', 
   const quiet = stationSpeech(s, [], 3, now);
   assert.equal(quiet.peek, undefined);
   assert.equal(shownSpeech(s, [], 3, now, quiet, true)?.peek, false);
+});
+
+test('the dock row hides a read final reply; pointing peeks it with a way to keep it up', () => {
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000 });
+  const read = notice(s.id, { seenAt: now - 1000 });
+  const speech = stationSpeech(s, [read], 3, now);
+  assert.equal(speech.bubble?.id, read.id, 'still the current bubble');
+  const row = (pointing: boolean, n = [read], sp = speech) =>
+    shownSpeech(s, n, 3, now, sp, pointing, pointing, { hideRead: true });
+  assert.equal(row(false), undefined, 'gone once read');
+  assert.deepEqual(
+    [row(true)?.peek, row(true)?.keep, row(true)?.speech.bubble?.id],
+    [true, true, read.id],
+  );
+  // Elsewhere (big office, pet) it stays as before.
+  assert.equal(shownSpeech(s, [read], 3, now, speech, false)?.peek, false);
+  // Unread, a call, or a progress note keeps its bubble.
+  const fresh = notice(s.id);
+  assert.equal(row(false, [fresh], stationSpeech(s, [fresh], 3, now))?.peek, false);
+  const calling = session(1, 'team', { status: 'call' });
+  const answered = notice(calling.id, { seenAt: now - 1000 });
+  assert.equal(
+    shownSpeech(
+      calling,
+      [answered],
+      3,
+      now,
+      stationSpeech(calling, [answered], 3, now),
+      false,
+      false,
+      {
+        hideRead: true,
+      },
+    )?.peek,
+    false,
+  );
+  const note = notice(s.id, { phase: 'commentary', seenAt: now - 1000 });
+  assert.equal(row(false, [note], stationSpeech(s, [note], 3, now))?.keep, undefined);
 });
 
 test('the stacked desk shows the helper that most needs the person, then one at work', () => {

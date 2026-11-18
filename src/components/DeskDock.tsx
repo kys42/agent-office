@@ -1,15 +1,37 @@
 import { PetAppearanceContext } from './PetAppearanceContext';
+import { DeskAppearanceContext } from './DeskAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
+import { DOCK_RECLAIM } from '../lib/useDockPill';
 import { useTerminalSend } from '../lib/useTerminalSend';
 import type { DockMode } from '../shared/types';
 import { DeskPet } from './DeskPet';
 import { DeskRow } from './DeskRow';
+import { DockTips } from './DockTips';
+import type { DockViewControls, DockViewPick } from './DockViewMenu';
+import type { DockPlusControls } from './DockPlus';
+import type { DockPeekControls } from './DockPeek';
+import { dockViewStep } from '../shared/dock-look';
 import { useI18n } from '../lib/i18n';
 
-const initialMode = (): DockMode =>
-  location.hash === '#mini=row' ? 'row' : location.hash === '#mini=floor' ? 'floor' : 'pet';
+// `#mini=row`, `#mini=floor&tiny`: the look the main process opened the window with.
+const hash = () => new URLSearchParams(location.hash.slice(1));
+const initialMode = (): DockMode => {
+  const mini = hash().get('mini');
+  return mini === 'row' || mini === 'floor' ? mini : 'pet';
+};
+const TINY_KEY = 'office:dock-tiny';
+/** Tiny row/floor: the window's hash when it says so, else the browser preview's last choice. */
+function initialTiny(): boolean {
+  if (hash().has('tiny')) return true;
+  if (api.dock) return false;
+  try {
+    return localStorage.getItem(TINY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 type Expanded = Exclude<DockMode, 'pet'>;
 const EXPAND_KEY = 'office:dock-expand';
 /** The person's last unfolded look (office row or floor desks); the pet reopens it. */
@@ -36,7 +58,7 @@ export function DeskDock() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const { model, snapshot, error, receipt, veil, pin, refresh, refreshing } = useOffice(
+  const { model, snapshot, error, receipt, veil, pin, reorderSeats, returnToOffice } = useOffice(
     demo,
     notify,
   );
@@ -50,6 +72,20 @@ export function DeskDock() {
   }, [reload]);
   const [mode, setMode] = useState<DockMode>(initialMode);
   const [expanded, setExpanded] = useState<Expanded>(lastExpanded);
+  const [tiny, setTiny] = useState(initialTiny);
+  // Which edge of its window the pet stands at (the main process grows the window the other way).
+  const [petSide, setPetSide] = useState<'left' | 'right'>('right');
+  useEffect(() => api.onDockSide?.(setPetSide), []);
+  const keepTiny = (on: boolean) => {
+    setTiny(on);
+    // The desktop main process remembers tiny (dock.json); only a browser preview keeps it here.
+    if (api.dock) return;
+    try {
+      localStorage.setItem(TINY_KEY, on ? '1' : '0');
+    } catch {
+      /* per-viewer convenience only */
+    }
+  };
   // Remember only looks the person (or the main process) actually switched to — not the
   // initial hash of a reloaded window, which may be stale.
   const remember = (next: DockMode) => {
@@ -72,18 +108,98 @@ export function DeskDock() {
       setMode(next);
     }
   };
+  // Tiny is the main process's too (it resizes the window); a preview just redraws.
+  const shrink = (on: boolean) => {
+    if (api.dock) void api.dock(on ? 'tiny-on' : 'tiny-off');
+    else keepTiny(on);
+  };
   const solid = useRef<boolean | null>(null);
+  const arranging = useRef(false);
+  const arrange = useCallback((active: boolean, point?: { x: number; y: number }) => {
+    arranging.current = active;
+    if (!api.dock) return;
+    const hit = point && document.elementFromPoint(point.x, point.y);
+    const over = active || !!hit?.closest('[data-solid]');
+    if (solid.current === over) return;
+    solid.current = over;
+    void api.dock(over ? 'solid' : 'through');
+  }, []);
   useEffect(
     () =>
-      api.onDock?.((next) => {
+      api.onDock?.((next, small) => {
         // Every (re)show resets native mouse handling to see-through; forget our last claim.
         solid.current = null;
         remember(next);
         setMode(next);
+        if (small !== undefined) keepTiny(small);
         reload();
       }),
     [reload],
   );
+  // Room above the desks or the pet: the window grows upward while a dialog or the 보기 menu
+  // is open, and shrinks back once neither is. Each holder claims it by name.
+  const roomHolders = useRef(new Set<string>());
+  const room = useCallback(async (holder: string, on: boolean) => {
+    const held = roomHolders.current;
+    const before = held.size > 0;
+    if (on) held.add(holder);
+    else held.delete(holder);
+    if (api.dock && before !== held.size > 0) await api.dock(on ? 'room-on' : 'room-off');
+  }, []);
+  // A dialog (summon, a folder shell's confirm…) needs more than the strip's height, a tiny
+  // one's above all: the window grows upward while one is open, the desks staying put. The
+  // pet's window grows up and to the left (its ＋ opens the launch sheet too).
+  useEffect(() => {
+    if (!api.dock) return;
+    let open = false;
+    const check = () => {
+      const now = !!document.querySelector('.modal-backdrop');
+      if (now === open) return;
+      open = now;
+      void room('dialog', now);
+    };
+    check();
+    const watch = new MutationObserver(check);
+    watch.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      watch.disconnect();
+      if (open) void room('dialog', false);
+    };
+  }, [mode, room]);
+  // The 보기 menu: a look keeps the tiny setting, the tiny toggle from the pet unfolds the
+  // last unfolded look small. Size first, so the new look opens at its own height.
+  const pickView = (choice: DockViewPick) => {
+    if (choice === 'main') return void api.window('main');
+    if (choice === 'settings') return void api.settings?.open();
+    const next = dockViewStep({ mode, tiny }, choice, expanded);
+    if (next.tiny !== undefined) shrink(next.tiny);
+    if (next.mode) go(next.mode);
+  };
+  const view: DockViewControls = {
+    look: { mode, tiny },
+    onPick: pickView,
+    settings: !!api.settings,
+    room: (on) => room('menu', on),
+  };
+  // 잠깐 숨기기: the desks and the pet step aside, the pill stays. For this look only: changing
+  // the look (an Esc folding to the pet too) shows everything again, as does a restart.
+  const [peeking, setPeeking] = useState(false);
+  useEffect(() => setPeeking(false), [mode, tiny]);
+  const peek: DockPeekControls = {
+    on: peeking,
+    toggle: () => setPeeking((on) => !on),
+    off: () => setPeeking(false),
+  };
+  // The ＋ popover: a new session in a project (the launch sheet), or a colleague brought back
+  // from the lounge or the archive with the big office's own call.
+  const plus: DockPlusControls = {
+    model,
+    privacy,
+    demo,
+    notify,
+    onReturn: returnToOffice,
+    room: (on) => room('plus', on),
+  };
   useEffect(() => {
     document.body.classList.add('dock-mode');
     return () => document.body.classList.remove('dock-mode');
@@ -102,18 +218,31 @@ export function DeskDock() {
   useEffect(() => {
     if (!api.dock) return;
     const claim = (over: boolean) => {
+      over ||= arranging.current;
       if (over === solid.current) return;
       solid.current = over;
       void api.dock?.(over ? 'solid' : 'through');
     };
-    const move = (e: MouseEvent) =>
+    let last: { x: number; y: number } | null = null;
+    const move = (e: MouseEvent) => {
+      last = { x: e.clientX, y: e.clientY };
       claim(e.target instanceof Element && !!e.target.closest('[data-solid]'));
+    };
     // A fast exit can skip the transparent margin; never leave the window holding clicks.
-    const leave = () => claim(false);
+    const leave = () => {
+      last = null;
+      claim(false);
+    };
+    // Something solid appeared under a still pointer (the hidden pill came up): judge it again.
+    const reclaim = () => {
+      if (last) claim(!!document.elementFromPoint(last.x, last.y)?.closest('[data-solid]'));
+    };
     window.addEventListener('mousemove', move);
+    window.addEventListener(DOCK_RECLAIM, reclaim);
     document.documentElement.addEventListener('mouseleave', leave);
     return () => {
       window.removeEventListener('mousemove', move);
+      window.removeEventListener(DOCK_RECLAIM, reclaim);
       document.documentElement.removeEventListener('mouseleave', leave);
     };
   }, []);
@@ -126,13 +255,25 @@ export function DeskDock() {
           onReceipt={receipt}
           status={snapshot ? null : error ? t.dock.status.check : t.dock.status.connecting}
           onExpand={() => go(expanded)}
-          onFloor={() => go('floor')}
           onReply={send.sendReply}
-          onRefresh={() => void refresh()}
+          view={view}
+          plus={plus}
+          peek={peek}
+          side={petSide}
+          notify={notify}
         />
       ) : (
         <DeskRow
+          demo={demo}
+          onArrange={arrange}
+          onReorder={(ids) => void reorderSeats(ids)}
+          onReturn={returnToOffice}
+          room={(on) => room('tally', on)}
           variant={mode === 'floor' ? 'floor' : 'office'}
+          tiny={tiny}
+          view={view}
+          plus={plus}
+          peek={peek}
           model={model}
           status={snapshot ? null : error ? t.dock.status.error(error) : t.dock.status.opening}
           privacy={privacy}
@@ -148,13 +289,10 @@ export function DeskDock() {
               .catch((e) => notify((e as Error).message))
           }
           notify={notify}
-          onRefresh={() => void refresh()}
-          refreshing={refreshing}
-          onCollapse={() => go('pet')}
-          onSwitch={() => go(mode === 'floor' ? 'row' : 'floor')}
           onReply={send.sendReply}
         />
       )}
+      <DockTips />
       {toast && (
         <div className="dock-toast" role="status">
           {toast}
@@ -165,7 +303,9 @@ export function DeskDock() {
 
   return (
     <PetAppearanceContext.Provider value={snapshot?.preferences.petAppearance}>
-      {content}
+      <DeskAppearanceContext.Provider value={snapshot?.preferences.deskAppearance}>
+        {content}
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

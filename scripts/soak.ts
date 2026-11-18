@@ -109,6 +109,7 @@ const samples: {
   cache: number;
   cacheMiB: number;
   notices: number;
+  coldMiB: number;
 }[] = [];
 let failed = '';
 try {
@@ -125,6 +126,11 @@ try {
     }
     await service.refresh();
     const w = service.windows;
+    if (
+      service.cache.bytes > service.cache.budgetBytes ||
+      service.coldCache.bytes > service.coldCache.budgetBytes
+    )
+      failed = `parse tiers over budget at ${c}`;
     if (w.bytes > w.budgetBytes) failed = `window cache over budget at ${c}`;
     if (service.cache.size > next) failed = `parse cache larger than the files at ${c}`;
     if (c === 1 || c % Math.max(1, Math.floor(cycles / 12)) === 0)
@@ -134,6 +140,7 @@ try {
         windows: w.size,
         windowMiB: w.bytes / 1048576,
         cache: service.cache.size,
+        coldMiB: service.coldCache.bytes / 1048576,
         // What the parse cache holds, as JSON text (a proxy for its share of the heap).
         // Notices the office carries in every snapshot (and keeps in the last one sent).
         notices: (service.snapshot().notices ?? []).length,
@@ -155,6 +162,7 @@ console.table(
     'window MiB': s.windowMiB.toFixed(1),
     'parse cache': s.cache,
     'cache MiB': s.cacheMiB.toFixed(1),
+    'cold MiB': s.coldMiB.toFixed(1),
     notices: s.notices,
   })),
 );

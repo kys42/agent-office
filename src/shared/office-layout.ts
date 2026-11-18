@@ -1,11 +1,18 @@
 import type { Session } from './types';
 import { benchKey, projectKey } from './office';
-import { isCustomZone } from './zones';
+import { isCustomZone, zoneLabel } from './zones';
 
 export const STATION_WIDTH = 164;
 export const STATION_HEIGHT = 238;
-export const HELPER_ROW_HEIGHT = 72;
-/** From this many helpers on one colleague, they share one stacked desk ("×N"). */
+/** A helper desk's width beside the desk it belongs to (big office and row alike). */
+export const HELPER_WIDTH = 73;
+/** Helper desks stand with their table at the station's desk height (station space; the big
+ * office and the row's office mode — the floor stands them on the floor instead). */
+export const HELPER_TOP = 102;
+/**
+ * From this many helpers on one colleague, they share one stacked desk ("×N"). The default of
+ * the `helperStackAt` preference; the layouts take the person's choice as `stackAt`.
+ */
 export const HELPER_STACK_AT = 4;
 const PADDING = 14;
 const LABEL = 38;
@@ -29,7 +36,15 @@ export interface ProjectArea {
   width: number;
   height: number;
   stations: StationPlacement[];
-  benches: { key: string; members: string[]; x: number; y: number; width: number }[];
+  /** `shared`: the long desk of one branch, even where a colleague's helpers break it. */
+  benches: {
+    key: string;
+    members: string[];
+    x: number;
+    y: number;
+    width: number;
+    shared: boolean;
+  }[];
 }
 export interface OfficeLayout {
   width: number;
@@ -78,7 +93,7 @@ export function officeTopology(sessions: Session[]): OfficeTopology {
     for (const s of members) benches.set(benchKey(s), [...(benches.get(benchKey(s)) ?? []), s]);
     return {
       key,
-      name: members[0].area?.name ?? members[0].project,
+      name: zoneLabel(members[0]),
       custom: isCustomZone(key) ? [...new Set(members.map((s) => s.project))] : undefined,
       benches: [...benches].map(([key, members]) => ({ key, members })),
     };
@@ -87,23 +102,34 @@ export function officeTopology(sessions: Session[]): OfficeTopology {
 }
 
 /**
- * A colleague's helper desks: one each, or — from HELPER_STACK_AT helpers — one stacked desk
- * that keeps every helper reachable through its list.
+ * A colleague's helper desks: one each, or — from `stackAt` helpers (HELPER_STACK_AT unless the
+ * person chose otherwise) — one stacked desk that keeps every helper reachable through its list.
  */
-export function helperSlots(helpers: Session[]): { id: string; stack?: string[] }[] {
-  if (helpers.length < HELPER_STACK_AT) return helpers.map((c) => ({ id: c.id }));
+export function helperSlots(
+  helpers: Session[],
+  stackAt: number = HELPER_STACK_AT,
+): { id: string; stack?: string[] }[] {
+  if (helpers.length < Math.max(2, stackAt)) return helpers.map((c) => ({ id: c.id }));
   return [{ id: helpers[0].id, stack: helpers.map((c) => c.id) }];
 }
 
 /** Only topology/ordering changes furniture. Activity, selection and recent-use sorting do not. */
 export function layoutSignature(sessions: Session[]) {
   return sessions
-    .map((s) => [s.id, s.project, projectKey(s), benchKey(s), s.attachedTo, s.officeSeat].join('|'))
+    .map((s) =>
+      [s.id, s.project, zoneLabel(s), projectKey(s), benchKey(s), s.attachedTo, s.officeSeat].join(
+        '|',
+      ),
+    )
     .sort()
     .join('\n');
 }
 
-export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
+export function layoutOffice(
+  sessions: Session[],
+  aspect = 1.7,
+  stackAt: number = HELPER_STACK_AT,
+): OfficeLayout {
   const { primary, projects: groups, children } = officeTopology(sessions);
   if (!primary.length) return { width: 800, height: 440, projects: [], count: 0 };
 
@@ -116,6 +142,7 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
       rowHeight = 0;
     for (const { key, name, custom, benches } of groups) {
       const ordered = benches.flatMap((b) => b.members);
+      const together = new Map(benches.map((b) => [b.key, b.members.length > 1]));
       const cols = Math.min(columns, ordered.length);
       const area: ProjectArea = {
         key,
@@ -123,45 +150,49 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
         custom,
         x: 0,
         y: 0,
-        width: cols * STATION_WIDTH + PADDING * 2,
+        width: 0,
         height: 0,
         stations: [],
         benches: [],
       };
       let stationY = LABEL;
+      let widest = 0;
       for (let start = 0; start < ordered.length; start += cols) {
         const row = ordered.slice(start, start + cols);
-        row.forEach((s, col) => {
-          const stationX = PADDING + col * STATION_WIDTH;
-          area.stations.push({
-            id: s.id,
-            x: stationX,
-            y: stationY,
-            children: helperSlots(children.get(s.id) ?? []).map((c, i) => ({
-              ...c,
-              x: stationX + 10 + (i % 2) * 73,
-              y: stationY + STATION_HEIGHT + Math.floor(i / 2) * HELPER_ROW_HEIGHT - 4,
-            })),
-          });
-          const previous = area.benches.at(-1);
-          if (col > 0 && previous?.key === benchKey(s)) {
-            previous.width += STATION_WIDTH;
-            previous.members.push(s.id);
-          } else
-            area.benches.push({
-              key: benchKey(s),
-              members: [s.id],
-              x: stationX + 5,
+        // A bench's members sit side by side at one long desk; a colleague's helper desks join
+        // right beside its own desk, at desk height (the long desk breaks there to make room).
+        let cursor = PADDING;
+        let bench: ProjectArea['benches'][number] | undefined;
+        for (const m of row) {
+          const key = benchKey(m);
+          if (bench?.key === key) {
+            bench.width += STATION_WIDTH;
+            bench.members.push(m.id);
+          } else {
+            bench = {
+              key,
+              members: [m.id],
+              x: cursor + 5,
               y: stationY + 134,
               width: STATION_WIDTH - 10,
-            });
-        });
-        const helpers = Math.max(
-          0,
-          ...row.map((s) => Math.ceil(helperSlots(children.get(s.id) ?? []).length / 2)),
-        );
-        stationY += STATION_HEIGHT + helpers * HELPER_ROW_HEIGHT;
+              shared: together.get(key) ?? false,
+            };
+            area.benches.push(bench);
+          }
+          const station: StationPlacement = { id: m.id, x: cursor, y: stationY, children: [] };
+          area.stations.push(station);
+          cursor += STATION_WIDTH;
+          const slots = helperSlots(children.get(m.id) ?? [], stackAt);
+          for (const slot of slots) {
+            station.children.push({ ...slot, x: cursor, y: stationY + HELPER_TOP });
+            cursor += HELPER_WIDTH;
+          }
+          if (slots.length) bench = undefined;
+        }
+        widest = Math.max(widest, cursor);
+        stationY += STATION_HEIGHT;
       }
+      area.width = widest + PADDING;
       area.height = stationY + PADDING;
       if (x > PADDING && x + area.width > maxWidth + PADDING) {
         x = PADDING;
@@ -197,7 +228,6 @@ export const DESK_FOOT = 188;
 export const FLOOR_ZONE_GAP = 56;
 const ROW_PAD = 12;
 const ROW_ZONE_GAP = 18;
-const HELPER_WIDTH = 73;
 export interface RowZone {
   key: string;
   name: string;
@@ -206,7 +236,7 @@ export interface RowZone {
   width: number;
   stations: { id: string; x: number }[];
   helpers: { id: string; parent: string; x: number; stack?: string[] }[];
-  benches: { key: string; members: string[]; x: number; width: number }[];
+  benches: { key: string; members: string[]; x: number; width: number; shared: boolean }[];
 }
 export interface RowLayout {
   width: number;
@@ -216,11 +246,14 @@ export interface RowLayout {
 
 /**
  * The office as one line: zones side by side, a bench's members joined at one long desk,
- * and helper desks right after the bench they belong to (benches stay unbroken).
+ * and helper desks right beside the desk they belong to (the long desk breaks there).
  */
 export function layoutRow(
   sessions: Session[],
-  { zoneGap = ROW_ZONE_GAP }: { zoneGap?: number } = {},
+  {
+    zoneGap = ROW_ZONE_GAP,
+    stackAt = HELPER_STACK_AT,
+  }: { zoneGap?: number; stackAt?: number } = {},
 ): RowLayout {
   const { projects, children } = officeTopology(sessions);
   const zones: RowZone[] = [];
@@ -238,21 +271,32 @@ export function layoutRow(
     };
     let cursor = ROW_PAD;
     for (const bench of benches) {
-      zone.benches.push({
-        key: bench.key,
-        members: bench.members.map((s) => s.id),
-        x: cursor + 5,
-        width: bench.members.length * STATION_WIDTH - 10,
-      });
+      // As in the big office: a colleague's helpers right beside its own desk, the long desk
+      // breaking there and going on after them.
+      let piece: RowZone['benches'][number] | undefined;
       for (const s of bench.members) {
+        if (piece) {
+          piece.width += STATION_WIDTH;
+          piece.members.push(s.id);
+        } else {
+          piece = {
+            key: bench.key,
+            members: [s.id],
+            x: cursor + 5,
+            width: STATION_WIDTH - 10,
+            shared: bench.members.length > 1,
+          };
+          zone.benches.push(piece);
+        }
         zone.stations.push({ id: s.id, x: cursor });
         cursor += STATION_WIDTH;
-      }
-      for (const s of bench.members)
-        for (const c of helperSlots(children.get(s.id) ?? [])) {
+        const slots = helperSlots(children.get(s.id) ?? [], stackAt);
+        for (const c of slots) {
           zone.helpers.push({ ...c, parent: s.id, x: cursor });
           cursor += HELPER_WIDTH;
         }
+        if (slots.length) piece = undefined;
+      }
     }
     zone.width = cursor + ROW_PAD;
     zones.push(zone);

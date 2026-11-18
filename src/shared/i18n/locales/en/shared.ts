@@ -163,6 +163,7 @@ export const shared = {
     scheduled: 'Scheduled run',
     internal: 'Internal helper',
     helper: 'Helper task',
+    teammate: 'Agent-team member',
     conversation: 'Conversation',
   },
   runtime: {
@@ -190,7 +191,8 @@ export const shared = {
     hidden: '[hidden]',
   },
   api: {
-    checkConnection: 'Check the connection',
+    checkConnection:
+      'Live updates are disconnected. Showing the last available office. Check the connection.',
     revealDesktopOnly: 'Opening the source location is available in the desktop app.',
   },
 };

@@ -11,6 +11,8 @@ import {
   layoutSignature,
   STATION_WIDTH,
   STATION_HEIGHT,
+  HELPER_TOP,
+  HELPER_WIDTH,
 } from '../src/shared/office-layout.js';
 import { allocateSeats, benchKey } from '../src/shared/office.js';
 import { branchInfo } from '../src/shared/branch.js';
@@ -83,7 +85,13 @@ test('Every desk and helper stays in a nonoverlapping project area at dense and 
           assert.ok(s.x + STATION_WIDTH <= p.width && s.y + STATION_HEIGHT <= p.height);
           for (const c of s.children) {
             assert.ok(c.x + 68 <= p.width && c.y + 68 <= p.height);
-            assert.ok(c.y >= s.y + STATION_HEIGHT - 4);
+            // Beside the desk it belongs to, at desk height, never over another desk.
+            assert.ok(c.x >= s.x + STATION_WIDTH && c.y === s.y + HELPER_TOP);
+            assert.ok(
+              p.stations.every(
+                (o) => o.y !== s.y || c.x + HELPER_WIDTH <= o.x || c.x >= o.x + STATION_WIDTH,
+              ),
+            );
           }
         }
         for (const q of l.projects.filter((q) => q !== p))
@@ -187,4 +195,23 @@ test('Codex metadata with only a commit retains the value for detached worktrees
   assert.equal(s.branch, null);
   assert.equal(s.gitCommit, '7b880ba123456');
   assert.equal(branchInfo(s).label, '커밋 · 7b880ba');
+});
+
+test("Helper desks join right beside their colleague's desk (after its bench), touching it", () => {
+  const owner = session(0, 'team');
+  const other = session(1, 'other');
+  const helpers = [0, 1].map((i) => ({ ...session(10 + i, 'team'), attachedTo: owner.id }));
+  const l = layoutOffice([owner, other, ...helpers], 1.7);
+  const area = l.projects.find((p) => p.stations.some((s) => s.id === owner.id))!;
+  const station = area.stations.find((s) => s.id === owner.id)!;
+  assert.deepEqual(
+    station.children.map((c) => [c.x, c.y]),
+    [
+      [station.x + STATION_WIDTH, station.y + HELPER_TOP],
+      [station.x + STATION_WIDTH + HELPER_WIDTH, station.y + HELPER_TOP],
+    ],
+  );
+  // The area widens for them instead of growing a row below.
+  assert.equal(area.width, station.x + STATION_WIDTH + 2 * HELPER_WIDTH + 14);
+  assert.equal(area.height, station.y + STATION_HEIGHT + 14);
 });

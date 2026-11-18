@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { deriveState } from '../src/shared/runtime.js';
-import { isStandingBy, presentSession } from '../src/shared/presentation.js';
+import { AWAKE_MS, COMMUTE_MS, isStandingBy, presentSession } from '../src/shared/presentation.js';
 import { triageGroup } from '../src/shared/triage.js';
 import { officeSchedule, validOfficeSchedule } from '../src/shared/lifecycle.js';
 import { MOODS, type Session } from '../src/shared/types.js';
@@ -138,4 +138,49 @@ test('the service keeps the standing-by window with the other schedule preferenc
     service.stop();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('a colleague just brought in or on its first conversation walks in awake, then rests as usual', () => {
+  const old = { startedAt: now - 30 * 24 * hour, returnedAt: undefined };
+  // Asleep and long quiet: it dozes as before…
+  const sleeper = make({ ...old, status: 'sleep', updatedAt: now - 3 * hour });
+  assert.equal(presentSession(sleeper, now).posture, 'dozing');
+  assert.equal(presentSession(sleeper, now).commuting, false);
+  // …but brought back to the office just now, it walks in and sits up, not asleep.
+  const back = { ...sleeper, returnedAt: now - 5_000 };
+  const pose = presentSession(back, now);
+  assert.equal(pose.commuting, true);
+  assert.equal(pose.posture, 'resting');
+  assert.notEqual(pose.mood, 'sleep');
+  // The walk is only for a view that sees it arrive; awake lasts a while longer.
+  const later = presentSession(back, now + COMMUTE_MS);
+  assert.equal(later.commuting, false);
+  assert.equal(later.posture, 'resting');
+  assert.equal(presentSession(back, now + AWAKE_MS).posture, 'dozing');
+  // A brand-new conversation walks in too, and keeps its real pose (typing when it works).
+  const fresh = make({ startedAt: now - 3_000, status: 'work', updatedAt: now });
+  assert.equal(presentSession(fresh, now).commuting, true);
+  assert.equal(presentSession(fresh, now).posture, 'typing');
+});
+
+test('a record read only at its ends never counts as a new conversation; each arrival walks in once', async () => {
+  const { walksIn } = await import('../src/lib/commute.js');
+  const windowed = make({
+    startedAt: now - 1_000,
+    windowed: true,
+    status: 'sleep',
+    updatedAt: now - hour,
+  });
+  assert.equal(presentSession(windowed, now).commuting, false);
+  assert.equal(presentSession({ ...windowed, returnedAt: now - 1_000 }, now).commuting, true);
+  const back = make({ id: 'walker', startedAt: now - 30 * 24 * hour, returnedAt: now - 1_000 });
+  assert.equal(walksIn(back, true, now), true);
+  assert.equal(walksIn(back, true, now + 1_000), true, 'the same walk, drawn again');
+  assert.equal(walksIn(back, true, now + 10_000), false, 'drawn anew later: no second walk');
+  assert.equal(
+    walksIn({ ...back, returnedAt: now + 20_000 }, true, now + 20_000),
+    true,
+    'brought back again',
+  );
+  assert.equal(walksIn(back, false, now), false);
 });

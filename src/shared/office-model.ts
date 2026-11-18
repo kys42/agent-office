@@ -1,4 +1,11 @@
-import type { OfficeNotice, OfficeZone, Session, Snapshot } from './types';
+import type {
+  OfficeNotice,
+  OfficeZone,
+  PetTallyGroup,
+  ProviderQuota,
+  Session,
+  Snapshot,
+} from './types';
 import { officeResidents } from './residents';
 import { officeZone, sessionName } from './office';
 import { presentSession } from './presentation';
@@ -10,6 +17,9 @@ import { freshRequest } from './speech';
 import { zoneLabel } from './zones';
 import { m } from './i18n';
 import { liveLabels } from './labels';
+import { quotaExhaustion, type QuotaExhaustion } from './quota';
+import { layoutRow } from './office-layout';
+import { PET_TALLY_GROUPS, viewPrefs, type ViewPrefs } from './view-prefs';
 
 /**
  * One derived read model shared by every presentation (big office, desk pet, desk row).
@@ -32,6 +42,8 @@ export interface ResidentView {
   veiled: boolean;
   /** This colleague or one of its helpers waits for the person: never hidden, no hide button. */
   needsPerson: boolean;
+  /** Its tool's usage limit is used up right now (a fresh read), with what binds it. */
+  quota?: QuotaExhaustion;
 }
 
 export interface OfficeModel {
@@ -39,6 +51,8 @@ export interface OfficeModel {
   notices: OfficeNotice[];
   /** How long a notice bubble stays on a desk (preference, default 3h). */
   bubbleHours: number;
+  /** The view preferences of #228 with their defaults (tiny names, pill, helper desks…). */
+  display: ViewPrefs;
   residents: Session[];
   hidden: Session[];
   /** Residents per zone, in projection order. */
@@ -47,7 +61,11 @@ export interface OfficeModel {
   bySeat: Session[];
   /** Primary office colleagues in seat order (all of them, for lists and counts). */
   seats: ResidentView[];
-  /** What the scenes draw: office residents in seat order minus hidden ones. */
+  /**
+   * What the scenes draw: office residents in seat order minus hidden ones — and minus every
+   * helper when the person turned helper desks off (they stay in `view`, the roster and the
+   * colleague's card, just without a desk).
+   */
   scene: Session[];
   /** Primary colleagues the person hid, in seat order (to bring them back). */
   veiled: ResidentView[];
@@ -57,10 +75,8 @@ export interface OfficeModel {
   hiddenSessionIds: string[];
   /** Shown office colleagues per triage group, helpers included (same as the roster). */
   counts: Record<TriageGroup, number>;
-  /** Important unread news across the whole office (header/inbox number), exact. */
+  /** Important unread notices across the whole office (window title), exact. */
   unread: number;
-  /** Some visible notices are not carried in `notices`; news lists read them by page. */
-  noticesPaged: boolean;
   /** The colleague that most needs the person right now. */
   lead: ResidentView | undefined;
   view: (id: string) => ResidentView | undefined;
@@ -69,11 +85,18 @@ export interface OfficeModel {
 
 const seatOrder = (a: Session, b: Session) => (a.officeSeat ?? 0) - (b.officeSeat ?? 0);
 
-export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): OfficeModel {
+export function buildOfficeModel(
+  snapshot: Snapshot | null,
+  now = Date.now(),
+  quotas: readonly ProviderQuota[] = [],
+): OfficeModel {
   const sessions = snapshot?.sessions ?? [];
   const prefs = snapshot?.preferences ?? {};
   const notices = snapshot?.notices ?? [];
-  const { sessions: residents, hidden } = officeResidents(sessions, now);
+  const display = viewPrefs(snapshot?.preferences);
+  const { sessions: residents, hidden } = officeResidents(sessions, now, {
+    unfinishedMs: display.helperUnfinishedMs,
+  });
   const zoneOf = (s: Session) => s.zone || officeZone(s, prefs, now);
   const zones = Object.fromEntries(
     ZONES.map((z) => [z, residents.filter((s) => zoneOf(s) === z)]),
@@ -107,6 +130,7 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
           notices,
         ),
       needsPerson: group === 'attention',
+      quota: !s.remote && quotas.length ? quotaExhaustion(s, quotas, now) : undefined,
     };
   });
   const byId = new Map(views.map((v) => [v.session.id, v]));
@@ -145,19 +169,26 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
     now,
     notices,
     bubbleHours: snapshot?.preferences.bubbleHours ?? 3,
+    display,
     residents,
     hidden,
     zones,
     bySeat,
     seats,
-    scene: bySeat.filter((s) => !byId.get(s.id)?.veiled),
+    // With helper desks off, a helper waiting for the person still keeps its desk: nobody waiting hides.
+    scene: bySeat.filter((s) => {
+      const v = byId.get(s.id);
+      return !v?.veiled && (display.helperDesks || !s.attachedTo || !!v?.needsPerson);
+    }),
     veiled: seats.filter((v) => v.veiled),
-    veiledHelpers: shown.flatMap((v) => v.helpers.filter((h) => h.veiled)),
+    // Helper desks off: their desks are not drawn, so hidden helpers are not listed or counted either.
+    veiledHelpers: display.helperDesks
+      ? shown.flatMap((v) => v.helpers.filter((h) => h.veiled))
+      : [],
     hiddenSessionIds: sessions.filter((s) => s.hiddenAt).map((s) => s.id),
     counts,
     // Counted over every notice by the collector; the carried ones are a bounded part.
     unread: snapshot?.noticeStats?.unread ?? unreadNoticeCount(notices),
-    noticesPaged: (snapshot?.noticeStats?.total ?? 0) > notices.length,
     lead,
     view,
     ownerOf: (id) => view(id)?.session,
@@ -172,6 +203,21 @@ export function residentLabel(s: Session, privacy: boolean) {
     project: privacy ? m().shared.office.project : zoneLabel(s),
     detail: privacy ? undefined : `${activityLabel(s)} · ${sessionActivity(s).text}`,
   };
+}
+
+/**
+ * What hiding a whole zone hides: each shown colleague at these stations (its helpers follow),
+ * minus anyone waiting for the person. A colleague waiting only through one helper keeps its
+ * desk, but its other helpers still go. Empty when nobody here can be hidden.
+ * It is the same hide as one desk's: everyone comes back on their own next conversation.
+ */
+export function zoneVeilIds(model: OfficeModel, stationIds: string[]): string[] {
+  return stationIds.flatMap((id) => {
+    const v = model.view(id);
+    if (!v || v.veiled) return [];
+    if (!v.needsPerson) return v.session.resident?.sessionIds ?? [v.session.id];
+    return v.helpers.filter((h) => !h.veiled && !h.needsPerson).map((h) => h.session.id);
+  });
 }
 
 export const hasNews = (v: ResidentView) => v.unread.length + v.helperUnread.length > 0;
@@ -252,4 +298,69 @@ export function petSummary(model: OfficeModel) {
     label: PET_LABELS[group],
     calling: model.counts.attention > 0,
   };
+}
+
+/**
+ * Who the pet can stand for, in the desk row's order (zones side by side): the colleagues the
+ * scene draws, helpers left out — and only those its pill counts (waiting, results, at work,
+ * standing by, or the groups the person chose to count, #324), so the arrows skip whoever rests.
+ * An office with nobody counted keeps everyone.
+ */
+export function petChoices(
+  model: OfficeModel,
+  groups: readonly TriageGroup[] = petCounted(model),
+): ResidentView[] {
+  const drawn = layoutRow(model.scene)
+    .zones.flatMap((z) => z.stations.map((st) => model.view(st.id)))
+    .filter((v): v is ResidentView => !!v && !v.veiled && !v.session.attachedTo);
+  const counted = drawn.filter((v) => v.group !== 'resting' && groups.includes(v.group));
+  return counted.length ? counted : drawn;
+}
+
+/** One number of a tally pill: a counted group and how many it holds. */
+export type TallyCount = { group: PetTallyGroup; count: number };
+
+/**
+ * The numbers pill (the pet's, and the row's, floor's and tiny's): a dot and a number per
+ * chosen group, in triage order, an empty group left out. Nobody in any chosen group: they all
+ * show at 0, rather than a pill naming a group the person left out.
+ */
+export function tallyCounts(model: OfficeModel, groups: readonly PetTallyGroup[]): TallyCount[] {
+  const picked = PET_TALLY_GROUPS.filter((group) => groups.includes(group));
+  const busy = picked.filter((group) => model.counts[group] > 0);
+  return (busy.length ? busy : picked).map((group) => ({ group, count: model.counts[group] }));
+}
+
+/** Who a number counts: every desk shown in that group, helpers too (as `model.counts`). */
+export function tallyMembers(model: OfficeModel, group: PetTallyGroup): ResidentView[] {
+  return model.seats
+    .filter((v) => !v.veiled)
+    .flatMap((v) => [v, ...v.helpers.filter((h) => !h.veiled)])
+    .filter((v) => v.group === group);
+}
+
+/** The groups the pet counts: the chosen ones on its numbers pill, every busy one without it. */
+export const petCounted = (model: OfficeModel): readonly TriageGroup[] =>
+  model.display.views.pet.tally ? model.display.views.pet.tallyGroups : PET_TALLY_GROUPS;
+
+/**
+ * The colleague the pet shows: the one the person picked with its arrows, while that one is
+ * still there and nobody else just spoke; otherwise who speaks, or the lead.
+ */
+export function petShown(
+  choices: ResidentView[],
+  pet: Pick<ReturnType<typeof petSummary>, 'speaker' | 'lead'>,
+  chosen: string | null,
+): { view: ResidentView | undefined; chosen: boolean } {
+  const picked = chosen ? choices.find((v) => v.session.id === chosen) : undefined;
+  if (picked) return { view: picked, chosen: true };
+  return { view: pet.speaker?.view ?? pet.lead, chosen: false };
+}
+
+/** The colleague next to `from` in the pet's order, going round at the ends. */
+export function petStep(choices: ResidentView[], from: string | undefined, step: -1 | 1) {
+  if (!choices.length) return undefined;
+  const at = choices.findIndex((v) => v.session.id === from);
+  const next = at < 0 ? (step > 0 ? 0 : choices.length - 1) : at + step;
+  return choices[(next + choices.length) % choices.length];
 }

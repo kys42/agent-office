@@ -114,6 +114,77 @@ test('Explicit input request becomes call; tool output clears it', () => {
     'work',
   );
 });
+test('A Claude turn stopped by the person ends as an aborted turn, not ongoing work', () => {
+  const base = { sessionId: 'c1', cwd: '/tmp/project' };
+  const at = (n: number) => new Date(now - 60_000 + n * 1000).toISOString();
+  const tool = {
+    ...base,
+    type: 'assistant',
+    uuid: 'a1',
+    timestamp: at(0),
+    message: {
+      id: 'm1',
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 't1', name: 'Bash' }],
+    },
+  };
+  const claude = { ...opts, provider: 'claude' as const };
+  assert.equal(parseRecords([tool], claude).status, 'work');
+  // The main transcript: a rejected tool result, then the note as user text.
+  const rejected = {
+    ...base,
+    type: 'user',
+    uuid: 'u1',
+    timestamp: at(1),
+    message: {
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'rejected' }],
+    },
+  };
+  const note = {
+    ...base,
+    type: 'user',
+    uuid: 'u2',
+    timestamp: at(2),
+    message: {
+      role: 'user',
+      content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }],
+    },
+  };
+  const stopped = parseRecords([tool, rejected, note], claude);
+  assert.equal(stopped.status, 'idle');
+  assert.equal(stopped.observedStatus, 'idle');
+  assert.match(stopped.statusReason, /turn_aborted/);
+  assert.equal(stopped.events.at(-1)?.lifecycle, 'aborted');
+  assert.equal(stopped.events.filter((e) => e.kind === 'user').length, 0);
+  // A subagent: the note is the tool's error result itself.
+  const inResult = {
+    ...rejected,
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 't1',
+          is_error: true,
+          content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }],
+        },
+      ],
+    },
+  };
+  assert.equal(parseRecords([tool, inResult], claude).status, 'idle');
+  // A failed tool is not a stop: the turn goes on.
+  assert.equal(parseRecords([tool, rejected], claude).status, 'work');
+  // The person's next request resumes the turn.
+  const next = {
+    ...base,
+    type: 'user',
+    uuid: 'u3',
+    timestamp: at(3),
+    message: { role: 'user', content: 'go on' },
+  };
+  assert.equal(parseRecords([tool, rejected, note, next], claude).status, 'think');
+});
 test('Claude streaming messages use the largest usage snapshot per message', () => {
   const base = {
     type: 'assistant',
@@ -295,6 +366,69 @@ test('OpenClaw SQLite reads only session tables, caches updates and namespaces a
     await rm(dir, { recursive: true });
   }
 });
+test('OpenClaw skips non-object SQLite events without losing the surrounding conversation', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-claw-null-'));
+  let db: DatabaseSync | undefined;
+  try {
+    const agent = path.join(dir, 'butler', 'agent');
+    await mkdir(agent, { recursive: true });
+    db = new DatabaseSync(path.join(agent, 'openclaw-agent.sqlite'));
+    db.exec(
+      'CREATE TABLE session_nodes(current_session_id TEXT,entry_json TEXT,updated_at INTEGER,status TEXT,label TEXT,display_name TEXT,parent_session_key TEXT,archived_at INTEGER);CREATE TABLE transcript_events(session_id TEXT,seq INTEGER,event_json TEXT)',
+    );
+    db.prepare('INSERT INTO session_nodes VALUES (?,?,?,?,?,?,?,?)').run(
+      's1',
+      '{}',
+      now,
+      'done',
+      'Recovered conversation',
+      null,
+      null,
+      null,
+    );
+    const event = (role: string, text: string) =>
+      JSON.stringify({
+        type: 'message',
+        id: role,
+        timestamp: now,
+        message: { role, content: [{ type: 'text', text }], stopReason: 'stop' },
+      });
+    const rows = [
+      event('user', 'Keep my request'),
+      'null',
+      '[]',
+      '"scalar"',
+      '42',
+      'true',
+      '{broken',
+      event('assistant', 'Keep my reply'),
+    ];
+    const insert = db.prepare('INSERT INTO transcript_events VALUES (?,?,?)');
+    rows.forEach((row, i) => insert.run('s1', i + 1, row));
+    const cache = new Map();
+    const result = await readOpenClawDatabases(dir, 10, cache);
+    assert.equal(result.errors, 0);
+    assert.equal(result.sessions.length, 1);
+    assert.equal(result.sessions[0].nativeId, 's1');
+    assert.equal(result.sessions[0].partial, true);
+    assert.deepEqual(
+      result.sessions[0].events.map((e) => e.text),
+      ['Keep my request', 'Keep my reply'],
+    );
+    assert.equal((await readOpenClawDatabases(dir, 10, cache)).sessions[0], result.sessions[0]);
+    assert.deepEqual(
+      db
+        .prepare('SELECT event_json FROM transcript_events ORDER BY seq')
+        .all()
+        .map((r) => r.event_json),
+      rows,
+      'read-only recovery preserves every original row',
+    );
+  } finally {
+    db?.close();
+    await rm(dir, { recursive: true });
+  }
+});
 test('OpenClaw isolates damaged metadata and invalidates rewritten transcripts at the same sequence', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'office-rewrite-'));
   try {
@@ -340,4 +474,29 @@ test('OpenClaw isolates damaged metadata and invalidates rewritten transcripts a
   } finally {
     await rm(dir, { recursive: true });
   }
+});
+test('Claude input typed mid-turn (queued command) becomes a user message; hand-backs do not', () => {
+  const q = (uuid: string, prompt: unknown, origin?: string) => ({
+    type: 'attachment',
+    uuid,
+    timestamp: new Date(now).toISOString(),
+    attachment: {
+      type: 'queued_command',
+      prompt,
+      commandMode: 'prompt',
+      ...(origin ? { origin: { kind: origin } } : {}),
+    },
+  });
+  const s = parseRecords(
+    [
+      q('a', '작업 중에 보낸 말', 'human'),
+      q('b', [{ type: 'text', text: '두 번째 말' }]),
+      q('c', '<task-notification>done</task-notification>', 'task-notification'),
+      q('d', 'peer says hi', 'peer'),
+      q('e', '<task-notification>old shape</task-notification>'),
+    ],
+    { ...opts, provider: 'claude', sourcePath: '/test/claude.jsonl' },
+  );
+  const users = s.events.filter((e) => e.kind === 'user').map((e) => e.text);
+  assert.deepEqual(users, ['작업 중에 보낸 말', '두 번째 말']);
 });

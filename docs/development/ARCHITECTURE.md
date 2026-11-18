@@ -8,9 +8,13 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - `server/adapters/`: 원본 형식의 차이와 상태 근거를 해석한다.
 - `server/store.ts`: 앱의 별명·메모·핀·보관·업무 확인과 원본 관측을 분리한다.
 - `server/service.ts`: 5초 폴링, 공급자 오류 격리, 설정·조회 입력 검증.
-- `server/worker.ts`, `bridge.ts`: UI를 멈추지 않고 수집·검색을 실행한다. 워커가 죽으면(예: 시작 시 DB 잠김) 대기 중 요청을 실패시키고, 다음 호출(새로고침 등)에서 다시 시작한다. 저장소는 시작할 때 다른 인스턴스의 쓰기 잠금을 최대 수십 초 기다린다(`OfficeStore`).
+- `server/worker.ts`, `bridge.ts`: UI를 멈추지 않고 수집·검색을 실행한다. 워커가 죽으면(예: 시작 시 DB 잠김) 대기 중 요청을 실패시키고 화면에 연결 이상을 알린다. 1·3·10초 간격으로 최대 3회 재시작해 전체 스냅샷을 게시한다. 잠깐 성공했다 다시 죽는 반복은 예산을 초기화하지 않고, 60초 이상 안정적으로 실행한 뒤에만 자동 복구 예산을 다시 허용한다. 한도 뒤에는 명시적 호출(새로고침 등)로 다시 시도할 수 있다. 저장소는 시작할 때 다른 인스턴스의 쓰기 잠금을 최대 수십 초 기다린다(`OfficeStore`).
 - `desktop/`: contextIsolation + sandbox + nodeIntegration=false, 메인 프레임·창 검증 IPC. 외부 페이지 내비게이션·새 창·권한 요청은 차단한다. 새 창 요청 중 http·https 웹 링크만 기본 브라우저로 넘기고(`webLink`, IPC `office:open-link`도 같은 검사), 그 밖의 주소는 열지 않는다.
 - `server/mcp.ts`: 같은 SQLite를 readOnly로 열어 4개 조회 도구만 노출한다. 추가 수집기·모델 실행·외부 전송을 시작하지 않는다.
+
+## 여러 Office 베타
+
+데스크톱 워커의 `FederatedService`가 기존 `OfficeService`와 별도 `PeerManager`를 합성한다. 꺼짐일 때 원래 snapshot/API를 유지하고 네트워크를 시작하지 않는다. 원격 내용은 메모리에만 두며 기존 SQLite에 저장하지 않는다. 송신기는 같은 앱의 별도 HTTPS 번들로 원본 DB를 readOnly로 연다. 전송은 독립 command token과 별도 시도 journal을 통해 기존 native adapter에 위임한다. 화면은 컴퓨터별 사무실 안에서 프로젝트 구역을 나눈다. 프로토콜·권한·운영 계약은 [여러 Office 베타](MULTI-OFFICE.md)를 따른다.
 
 ## 지원 소스
 
@@ -54,6 +58,15 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 데이터 위치: `~/Library/Application Support/Agent Office/office.sqlite`. `AGENT_OFFICE_DATA_DIR`로 변경할 수 있다. 디렉터리 0700, DB 0600, WAL, busy_timeout. 원본과 사용자 메타데이터를 별도 테이블로 유지한다.
 
+메시지 북마크(#97)는 `bookmarks` 테이블에 둔다(`session_id`+`event_id` 유일, `data`는 `Bookmark` JSON).
+- **사본:** 서버가 저장된 세션에서 그 메시지와 맥락을 찾아 사본으로 남긴다. 렌더러가 보낸 글은 받지 않는다. 원문 창 밖이면 보관된 소식 발췌로 남긴다.
+  - 맥락: 직전 요청, 그 사이 진행 메시지 최대 12개(앞 4·뒤 8, 나머지는 개수만), 도구 사용 횟수. `src/shared/bookmarks.ts`의 `bookmarkContext`가 정한다.
+  - 출처와 위치(`anchor`: nativeId·sessionKey·sourcePath·sourceRef·legacyId·대화 순번)도 함께 남겨서, 세션 기록이 사라져도 읽히고 다시 찾아갈 수 있게 한다.
+- **조회:** 세션이 지워져도 북마크는 남는다. 제외 프로젝트·꺼진 도구의 북마크는 목록에서만 빼고, 읽기·메모·해제도 막는다. 판단 기준은 그 동료가 지금 기록된 도구·프로젝트이고, 기록이 사라졌으면 북마크 당시의 출처다.
+- **표시 동기화:** 스냅샷 `bookmarked`(세션별 eventId)로 모든 창의 표시를 맞춘다. 추가·메모·해제마다 오르는 `bookmarkStamp`(settings `bookmarks_revision`)를 받으면 열린 목록이 다시 읽는다.
+- **동료 카드:** 기억 메모의 `Bookmarks`도 같은 API를 사용하며 `sessionIds`를 동료의 연결된 실행 ID로 제한한다. 직접 업무 메모는 기존 `Session.notes`, 북마크별 덧붙인 메모는 `Bookmark.note`로 유지한다.
+- **위치 이동:** 북마크를 열면 `detail(id, { reach, reachAt })`이 그 메시지까지 넓힌 최근 페이지(최대 400)를 돌려준다.
+
 프로젝트 제외·공급자 비활성은 list/search/detail/handoff/MCP 모두에 적용한다. 제외는 조회 정책이며 이미 저장된 데이터의 삭제를 뜻하지 않는다. 개인정보 화면 모드는 화면의 내용을 가리는 기능으로, 원문 삭제·암호화·OS 캡처 차단을 보장하지 않는다.
 
 검색은 제한된 로컬 코퍼스에 대해 대소문자 비구분 AND 부분 문자열을 사용한다. 한국어 부분 단어·기호를 지원한다. FTS5 테이블은 증분 색인으로 유지하되 현재 검색 결과에는 문자열 검증을 사용한다. 의미 검색/AI 요약이라고 표기하지 않는다.
@@ -70,11 +83,13 @@ PR·이슈는 HTTPS GitHub URL만 열 수 있다. 상세를 열 때 최대 8개�
 
 ## 배포와 경계
 
-원래 터미널로 이동·바로 보내기는 `desktop/terminals.ts`(Claude: Orca/tmux)·`desktop/codex-queue.ts`(Codex CLI: 맡은 프로세스가 있는 세션에 `codex queue`)와 main 전용 IPC(`office:terminals`·`office:jump`·`office:send`·`office:terminal-send`)에만 있다. 업무 카드와 말풍선은 같은 훅 `useSendTargets`로 대상을 받는다. 데스크 독의 업무 카드는 별도 창(`#card`, `DockCard`)으로 같은 코어(`useOffice`)와 같은 Inspector를 그리며, IPC `office:card`(열기는 독 창에서만, 닫기·전체 모드는 카드 창에서만)로 연다. 수집기 `OfficeService.call`은 개발 HTTP와 공유되므로 여기에 넣지 않는다. 렌더러는 handle 없는 `TerminalTarget`만 받고, main이 동작마다 다시 찾는다. 보내기 설정은 데스크탑 프로필에만 저장되고 기본 켜짐이다(끄면 그 선택을 남기고, 다시 켤 때 네이티브 확인창). 보내기는 쉬는 세션, 터미널 전면을 가진 Claude 프로세스에만 허용한다. 자세한 연결 고리와 경계는 [터미널 연결](TERMINAL.md).
+업무 카드의 미전송 채팅은 `useComposerDraft`가 `office:reply-draft:v1:live:<sessionId>`(데모는 `demo`) localStorage에 입력 즉시 저장한다. `useComposerSend`의 터미널 입력창 확인 상태(`DraftPrompt`)와 별개다. 실행 ID를 바꾸면 초안·전송 상태도 분리하며 `useSyncExternalStore`와 storage 이벤트로 전체/팝업 카드의 같은 실행을 동기화한다. 늦게 끝난 전송은 캡처한 실행 키의 글이 실제 보낸 글과 같을 때만 지운다. 저장소 오류 때는 창 안의 메모리로 유지하며 앱 재실행 영속화를 보장하지 않는다. 서버 DB·공유 환경설정·인수인계에는 넣지 않는다.
 
-패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 데스크 펫 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 그려진 요소(`[data-solid]`) 위에서만 마우스를 받고 나머지 영역의 클릭은 뒤 앱으로 통과시킨다(`setIgnoreMouseEvents` forward). 알림 업데이트는 focus를 호출하지 않는다.
+공통 호스트 검증·이동은 `desktop/terminal-host.ts`에 있다. Codex 화면 발견(`desktop/codex-focus.ts`)과 전송 대기열(`desktop/codex-queue.ts`)은 독립적이며, 화면 제목의 현재 전체 thread-id가 검증된 경우에만 이동한다. 원래 터미널로 이동·바로 보내기는 `desktop/terminals.ts`(Claude: Orca/tmux)·`desktop/codex-queue.ts`(Codex CLI: 맡은 프로세스가 있는 세션에 `codex queue`)와 main 전용 IPC(`office:terminals`·`office:jump`·`office:send`·`office:terminal-send`)에만 있다. 업무 카드와 말풍선은 같은 훅 `useSendTargets`로 대상을 받는다. 데스크 독의 업무 카드는 별도 창(`#card`, `DockCard`)으로 같은 코어(`useOffice`)와 같은 Inspector를 그리며, IPC `office:card`(열기는 독 창에서만, 닫기·전체 모드는 카드 창에서만)로 연다. 수집기 `OfficeService.call`은 개발 HTTP와 공유되므로 여기에 넣지 않는다. 렌더러는 handle 없는 `TerminalTarget`만 받고, main이 동작마다 다시 찾는다. 보내기 설정은 데스크탑 프로필에만 저장되고 기본 켜짐이다(끄면 그 선택을 남기고, 다시 켤 때 네이티브 확인창). 보내기는 쉬는 세션, 터미널 전면을 가진 Claude 프로세스에만 허용한다. 에이전트마다 다른 입력창 읽기·비우기는 `desktop/composer/`의 어댑터(Claude Code·Codex 대기열·그 밖)가 한 인터페이스로 맡고, 확인 UI(`DraftConfirm`·`useComposerSend`)·클립보드 백업·재확인 흐름은 한 벌이다. 자세한 연결 고리와 경계는 [터미널 연결](TERMINAL.md).
 
-서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 모델 요약/예약, 원격 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.
+패키지는 기본적으로 HTTP 서버를 열지 않는다. 사용자가 설정에서 켜는 [모바일 웹](MOBILE-WEB.md)은 Desktop이 소유하는 별도 인증 서버로, 선택한 loopback/Tailscale 주소에서 목록·대화·전송만 제공한다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 데스크 펫 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 그려진 요소(`[data-solid]`) 위에서만 마우스를 받고 나머지 영역의 클릭은 뒤 앱으로 통과시킨다(`setIgnoreMouseEvents` forward). 알림 업데이트는 focus를 호출하지 않는다.
+
+서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 모델 요약/예약, 원격 제어·계정 기반 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.
 
 ## 사용자에게 보이는 진행 설명
 
@@ -96,4 +111,16 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 
 `src/shared/conversation.ts`가 OfficeEvent의 공개 단계에 따라 사용자 요청/진행/최종/미분류/도구를 나누고 중복 공개 이벤트를 정리한다. Conversation은 이 기준으로 종류 필터와 말풍선 라벨을 적용하며 도구 기록은 기본 숨긴다. 분류를 바꿔도 메시지 확장 상태를 보존한다.
 
-소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 배지와 snapshot.noticeStats.unread가 같은 selector를 사용한다. NewsFeed는 최종/확인/전체 필터, 읽은 항목 포함, version별 일괄 read를 공유한다. snapshot의 `notices`는 화면에 필요한 bounded set만 담는다(`residentNotices`: 동료별 최신·최신 요청·최신 대화, 미해결 호출 전부, 미확인 최종 응답 최대 1,000건, 최근 100건). `noticeStats`는 모든 가시 소식 기준의 정확한 값이다. 실리지 않은 소식이 있으면 NewsFeed는 `noticePage`(cursor `(at,id)`, 범위별 정확한 미확인 수)로 읽고, 일괄 읽음은 `noticeReadAll(query, asOf)`로 범위 전체에 적용한다. 대화는 `detail(id, {before, limit=40})` 페이지로 읽는다. 카드는 읽은 페이지만 갖고, 이전 대화 버튼으로 앞 페이지를 붙인다. 이때 읽던 위치는 유지한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.
+소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 표시(점·창 제목 수)와 snapshot.noticeStats.unread가 같은 selector를 사용한다. 소식을 모아 보는 목록 화면은 없다(#300): 동료마다 마지막 결과를 봤는지만 점으로 보이고, 카드 열기·말 보내기·터미널 이동이 그 결과를 읽음으로 기록한다(보내기·이동은 `readReplies(sessionId, asOf)`로 snapshot 밖의 응답까지). snapshot의 `notices`는 화면에 필요한 bounded set만 담는다(`residentNotices`: 동료별 최신·최신 요청·최신 대화, 미해결 호출 전부, 미확인 최종 응답 최대 1,000건, 최근 100건). `noticeStats`는 모든 가시 소식 기준의 정확한 값이다. 실리지 않은 소식은 대화 발췌·북마크가 대화 페이지와 함께 cursor `(at,id)`로 읽는다. 대화는 `detail(id, {before, limit=40})` 페이지로 읽는다. 카드는 읽은 페이지만 갖고, 이전 대화 버튼으로 앞 페이지를 붙인다. 이때 읽던 위치는 유지한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.
+
+
+## 한줄 모드 구역 위치
+
+`row-placement.ts`는 기존 `layoutRow`의 구역 내부 공동 책상/보조 구조를 유지하며 구역의 x좌표만 계산한다. 사용한 공간 안에서 수평 위치를 비율로 저장하고, 가까운 구역은 간격을 보존하며 밀어 겹침을 막는다. canvas는 기본 가구 폭보다 줄어들지 않는다. 시각적 순서를 바꿔도 DOM key/순서는 유지하여 Chromium pointer capture가 중간에 풀리지 않게 한다.
+
+`useRowPlacement`는 pointer capture, 끝부분 자동 스크롤, Esc/blur/구조 변경 취소, 키보드 이동을 처리한다. 저장은 `office:row-zones:v1:live`/`demo` localStorage이며 서버 DB/업무 자리 번호를 수정하지 않는다. 화면에 잠시 없는 구역도 한도500개 안에서 기억한다. DeskDock은 제스처 동안 그려진 표지에서 시작한 native 마우스 입력을 붙잡고 끝나면 실제 hit-test로 클릭 통과를 복원한다.
+
+
+## 기록 조회와 메모리 예산 (#296)
+
+수집기 → SQLite 정본/조회 인덱스 → bounded snapshot·cursor page → bounded 화면 window로 나눈다. 소식의 정확한 총계와 영속 receipt는 화면에 실은 본문 수와 독립적이다. 파싱 cache, OpenClaw cache, patch 이력에는 크기와 개수 제한을 함께 둔다. 상세 구현·수치·마이그레이션·검증법은 [경량화 설계](PERFORMANCE-DESIGN.md), 수집 의미는 [세션 기록 분석](SESSION-INGESTION.md)에 둔다.

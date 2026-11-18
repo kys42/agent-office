@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   BellRing,
   Check,
@@ -8,23 +15,26 @@ import {
   Cloud,
   Copy,
   MessageSquare,
+  PanelRightOpen,
   PenLine,
+  Pin,
   Reply,
   TriangleAlert,
   User,
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { MOODS, type Session } from '../shared/types';
+import { MOODS, PROVIDERS, type Session } from '../shared/types';
 import { sessionName } from '../shared/office';
 import { noticeExposure } from '../shared/notices';
 import { toolLabel } from '../shared/activity';
 import { TONE_LABELS, type BubbleTone, type StationSpeech } from '../shared/speech';
+import { useReadingTextRevision } from '../lib/useReadingText';
 import { ago } from '../lib/format';
-import { InlineMarkdown } from './InlineMarkdown';
+import { BubbleMarkdown } from './BubbleMarkdown';
 import { useI18n } from '../lib/i18n';
-import { LinkifiedText } from './WebLink';
-import { api } from '../lib/api';
+import { FilesHere, LinkifiedText } from './WebLink';
+import { writeClipboard } from '../lib/clipboard';
 
 /** A non-empty text selection inside this element (the person is selecting, not clicking). */
 function selectionWithin(el: HTMLElement) {
@@ -63,9 +73,12 @@ export function SpeechBubble({
   detail,
   peek = false,
   reply,
+  onPopup,
   expanded,
   onExpandedChange,
+  onViewed,
   quote = false,
+  onKeep,
 }: {
   session: Session;
   speech: StationSpeech;
@@ -79,11 +92,17 @@ export function SpeechBubble({
   peek?: boolean;
   /** Quick reply, offered only when the session can take a follow-up right now. */
   reply?: { title: string; open: boolean; onClick: () => void };
+  /** Dock views: an unfolded bubble offers the colleague's pop-up card (the desk click is easy to miss). */
+  onPopup?: (anchor: Element) => void;
   /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  /** Unfolding the text counts as a view, including the chevron / keyboard path. */
+  onViewed?: () => void;
   /** While pointed at: the person's request as its own bubble right above, to recall what was asked. */
   quote?: boolean;
+  /** A peek of a read reply: keep it up again (marks it unread, for "later"). */
+  onKeep?: () => void;
 }) {
   const { t } = useI18n();
   const { bubble, activity, text, label, markdown, tone } = speech;
@@ -91,16 +110,43 @@ export function SpeechBubble({
   const Icon = TONE_ICONS[tone];
   // The person's request and thinking read as themselves; others keep their precise label.
   const heading = tone === 'mine' || tone === 'thought' ? TONE_LABELS[tone] : label;
-  const body = useRef<HTMLElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const [ownOpen, setOwnOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const open = expanded ?? ownOpen;
   const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
     const value = typeof next === 'function' ? next(open) : next;
+    if (value && !open && !privacy) onViewed?.();
     if (expanded === undefined) setOwnOpen(value);
     onExpandedChange?.(value);
   };
+  // Unfolded, it folds back once the person turns to something else: a click outside it (its
+  // reply box counts as inside) or another app (the window loses focus).
+  const root = useRef<HTMLDivElement>(null);
+  const fold = useEffectEvent(() => setOpen(false));
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      const el = e.target instanceof Element ? e.target : null;
+      if (!el || root.current?.contains(el)) return;
+      // Its own reply box (drawn beside it in the same desk or pet) counts as inside; another
+      // desk's does not.
+      const reply = el.closest('.quick-reply');
+      const desk = root.current?.closest('.desk-station, .dock-pet-speech');
+      if (reply && desk?.contains(reply)) return;
+      fold();
+    };
+    const blur = () => fold();
+    document.addEventListener('pointerdown', away, true);
+    window.addEventListener('blur', blur);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      window.removeEventListener('blur', blur);
+    };
+  }, [open]);
   const [long, setLong] = useState(false);
+  // A new reading size or font reflows the text inside a box that may keep its height.
+  const reflow = useReadingTextRevision();
   // The request bubble scrolls: a fade says there's more until its end is reached.
   const asked = useRef<HTMLParagraphElement>(null);
   const [more, setMore] = useState(false);
@@ -108,7 +154,7 @@ export function SpeechBubble({
     const el = asked.current;
     setMore(!!el && el.scrollTop + el.clientHeight < el.scrollHeight - 1);
   };
-  useLayoutEffect(measure, [request?.id, speech.requestText, privacy]);
+  useLayoutEffect(measure, [request?.id, speech.requestText, privacy, reflow]);
   // Shown later (the pet reveals it on hover) or resized: measure again.
   useEffect(() => {
     const el = asked.current;
@@ -119,11 +165,24 @@ export function SpeechBubble({
   }, [request?.id]);
   useLayoutEffect(() => {
     const el = body.current;
-    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
-  }, [text, markdown, open, privacy, request?.id]);
+    if (!el || open) return;
+    el.scrollTop = 0;
+    const measureBody = () =>
+      setLong(
+        el.scrollHeight > el.clientHeight + 1 ||
+          [...el.querySelectorAll<HTMLElement>('.bubble-table')].some(
+            (table) => table.scrollWidth > table.clientWidth + 1,
+          ),
+      );
+    measureBody();
+    const watch = new ResizeObserver(measureBody);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [text, markdown, open, privacy, request?.id, reflow]);
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
     <div
+      ref={root}
       data-tone={tone}
       className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''} ${peek ? 'is-peek' : ''}`}
     >
@@ -165,7 +224,7 @@ export function SpeechBubble({
         }}
         title={privacy ? t.desk.hidden : `${exposure ? `${exposure} · ` : ''}${text}`}
       >
-        <span className="speech-copy">
+        <div className="speech-copy">
           <small>
             <span className="bubble-label">
               <Icon size={9} strokeWidth={2.6} aria-hidden="true" />
@@ -185,17 +244,19 @@ export function SpeechBubble({
               {!privacy && activity.tool ? ` · ${toolLabel(activity.tool.name)}` : ''}
             </em>
           </small>
-          <b ref={body}>
+          <div className="speech-text" ref={body}>
             {privacy ? (
               MOODS[s.status].label
             ) : markdown ? (
-              <InlineMarkdown text={markdown} />
+              <FilesHere.Provider value={!s.remote}>
+                <BubbleMarkdown text={markdown} />
+              </FilesHere.Provider>
             ) : (
               <LinkifiedText text={text} />
             )}
-          </b>
+          </div>
           {detail && <span className="speech-detail">{detail}</span>}
-        </span>
+        </div>
       </div>
       {open && !privacy && (
         <button
@@ -205,7 +266,7 @@ export function SpeechBubble({
           onClick={(e) => {
             e.stopPropagation();
             const words = markdown ?? text;
-            void (api.copyText ?? ((value: string) => navigator.clipboard.writeText(value)))(words)
+            void writeClipboard(words)
               .then(() => {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
@@ -240,6 +301,19 @@ export function SpeechBubble({
           <i />
         </span>
       )}
+      {onPopup && open && (
+        <button
+          className="bubble-popup"
+          title={t.desk.row.cardTitle}
+          aria-label={t.desk.row.openCard(privacy ? PROVIDERS[s.provider].name : sessionName(s))}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPopup(e.currentTarget);
+          }}
+        >
+          <PanelRightOpen size={10} strokeWidth={2.6} />
+        </button>
+      )}
       {reply && (
         <button
           className={`bubble-reply ${reply.open ? 'open' : ''}`}
@@ -252,6 +326,19 @@ export function SpeechBubble({
           }}
         >
           <Reply size={11} strokeWidth={2.6} />
+        </button>
+      )}
+      {onKeep && (
+        <button
+          className="bubble-dismiss bubble-keep"
+          aria-label={t.desk.bubble.keep(privacy ? undefined : sessionName(s))}
+          title={t.desk.bubble.keepTitle}
+          onClick={(e) => {
+            e.stopPropagation();
+            onKeep();
+          }}
+        >
+          <Pin size={10} strokeWidth={2.6} />
         </button>
       )}
       {bubble && !peek && (
