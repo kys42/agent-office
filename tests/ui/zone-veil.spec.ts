@@ -113,6 +113,22 @@ test('Remote colleagues disappear from row and floor flags and can be restored',
   }
 });
 
+test('The big office hides a remote project and a remote desk too', async ({ page }) => {
+  const calls = await serve(page, true);
+  await page.goto('/');
+  await page.reload();
+  const zone = page.locator('.project-area').filter({ hasText: '원격 프로젝트' });
+  await expect(zone).toHaveCount(1);
+  // The desk offers its own hide button, like a local colleague's.
+  await expect(zone.getByRole('button', { name: '원격 동료 가리기' })).toHaveCount(1);
+  await zone.locator('.zone-mark-focus').hover();
+  await zone.getByRole('button', { name: '원격 프로젝트 모두 가리기' }).click();
+  await expect(zone).toHaveCount(0);
+  expect(calls[0][0][0]).toMatch(/^remote-office:/);
+  expect(calls[0][1]).toBe(true);
+  await expect(page.locator('.toast')).toContainText('다음 대화');
+});
+
 test('A pending or failed hide never claims success in the office or floor flag', async ({
   page,
 }) => {
