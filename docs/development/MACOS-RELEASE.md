@@ -94,7 +94,7 @@ CI timeout은 hosted runner가 사라지므로 로컬 재개와 다르다. 실�
 
 ### 다른 서버와 GitHub Actions
 
-[macOS Signed Release](../../.github/workflows/macos-signed.yml)는 main에 포함된 커밋의 수동 실행 또는 버전 태그로 실행한다. Linux에서 품질 검사를 하고, macOS arm64/x64 runner에서 최종 서명·공증·실행을 검사한다. Linux/Windows 서버는 소스 검증과 빌드 요청을 맡을 수 있지만 이 경로의 최종 Mac 패키징은 macOS/Xcode Command Line Tools가 필요하다. 일반 PR에는 서명 비밀값을 제공하지 않는다.
+[macOS Signed Release](../../.github/workflows/macos-signed.yml)는 main에 포함된 커밋의 수동 실행 또는 버전 태그로 실행한다. Linux에서 형식·단위·빌드·MCP·UI 검사를 통과한 뒤, macOS arm64/x64 runner에서 최종 서명·공증·실행을 검사한다. Linux/Windows 서버는 소스 검증과 빌드 요청을 맡을 수 있지만 이 경로의 최종 Mac 패키징은 macOS/Xcode Command Line Tools가 필요하다. 일반 PR에는 서명 비밀값을 제공하지 않는다.
 
 GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜치를 main, 허용 태그를 릴리스용 `v*`로 제한한다. 저장소 정책에 맞는 reviewer 보호도 적용한다. 코드 안의 ancestry 검사만으로 악의적인 workflow 변경을 막을 수 없으므로 environment 제한을 생략하지 않는다. 병합 전에 임의 feature ref로 secret job을 실행하지 않는다.
 
@@ -114,6 +114,10 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜�
 
 공증 프로필은 `xcrun notarytool store-credentials agent-office`의 대화형 입력 또는 승인된 API 키 파일로 등록한다. Apple ID 방식은 앱 전용 암호를 사용한다. CI는 위 팀 API 키 방식으로 통일한다. 개인 API 키(issuer 없는 방식)는 현재 CI 스크립트 범위 밖이다.
 
+### 공증 사전 점검 실패
+
+`release:mac -- preflight`는 업로드 없이 Apple history API 접근을 30초 안에 확인한다. 403 계약 오류는 소유자가 **해당 서명 팀**의 Apple Developer / App Store Connect Agreements를 확인한 뒤 재실행한다. 이미 동의했다면 다른 팀의 계약을 본 것은 아닌지 확인한다. 401은 팀 API 키 또는 keychain profile을 확인한다. 네트워크 timeout은 연결을 복구한 뒤 같은 preflight를 다시 실행한다. 이 단계 실패에는 제출 ID가 없으므로 resume이나 무조건 재제출로 해결하지 않는다. 실패 로그에 원래 인증 인자와 개인 키 경로를 복사하지 않는다.
+
 ### 유지보수와 복구
 
 - 인증서/Apple Developer 멤버십 만료 전에 갱신하고 새 P12로 실제 서명·공증·설치를 검증한다. 기존 인증서가 단순 갱신 대상이라면 즉시 revoke하지 않는다. 이미 배포한 앱의 타임스탬프와 권한 연속성도 확인한다.
@@ -132,7 +136,7 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜�
 4. macOS의 파일 및 폴더, 로컬 네트워크, 터미널 조작 권한은 쓰는 기능에 맞게 사용자가 허용한다. 앱에서 해당 시스템 설정만 열어 주며 권한 승인 여부를 추측해서 녹색 체크로 표시하지 않는다. 전체 디스크 접근을 모든 사용자에게 일괄 요구하거나 TCC DB를 수정하지 않는다.
 5. 동일 신원에서 계속 발생하면 UUID와 helper 서명, macOS 버전, 실제 차단 기능을 함께 조사한다. 권한 DB 초기화를 첫 해결책으로 사용하지 않는다.
 
-이 작업의 원인 후보: main은 임시 서명만 포함하고 정식 서명 PR235는 아직 별도였으며, 이 Mac은 그 PR을 통합한 별도 설치본을 사용했다. 다른 기기의 실제 설치본을 검사하기 전까지 동일 원인이라고 확정하지 않는다.
+2026-10-29 조사 당시 main은 임시 서명만 포함하고 정식 서명 PR235는 별도였다. 이는 과거 원인 후보 기록이며 현재 main의 서명 기능 부재를 뜻하지 않는다. 업데이트 후 반복 권한 문제는 해당 기기의 실제 설치본 신원과 빌드 출처를 위 절차로 확인한다.
 
 ## 로컬 네트워크 권한과 Electron UUID
 

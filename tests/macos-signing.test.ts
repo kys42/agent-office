@@ -153,3 +153,32 @@ test('Mach-O identity patch rejects missing, truncated and duplicate UUID load c
   duplicate.writeUInt32LE(24, 60);
   assert.throws(() => namespaceMachOUuid(duplicate, 'app'));
 });
+
+test('notarization preflight fails with actionable guidance without leaking credential argv', () => {
+  const env = {
+    APPLE_API_KEY_PATH: '/private/synthetic-key.p8',
+    APPLE_API_KEY: 'SYNTHETIC_ID',
+    APPLE_API_ISSUER: 'SYNTHETIC_ISSUER',
+  };
+  for (const [stderr, code, expected] of [
+    ['HTTP 403 required agreement missing or expired', '', /Agreements/],
+    ['HTTP 401 unauthorized', '', /authentication failed/],
+    ['', 'ETIMEDOUT', /timed out/],
+    ['unknown failure', '', /preflight failed/],
+  ] as const) {
+    assert.throws(
+      () =>
+        notary.verifyNotaryAccess(env, (_file: string, _args: string[], options: any) => {
+          assert.equal(options.timeout, 30000);
+          throw Object.assign(new Error(JSON.stringify(env)), { stderr, code });
+        }),
+      (error: any) => {
+        assert.match(error.message, expected);
+        assert.match(error.message, /No artifact was submitted/);
+        assert.doesNotMatch(error.stack, /synthetic-key|SYNTHETIC_ID|SYNTHETIC_ISSUER/);
+        assert.equal(error.cause, undefined);
+        return true;
+      },
+    );
+  }
+});
