@@ -285,9 +285,9 @@ function Chat({
       });
       if (scroller.current) {
         // Once newer records are evicted, total height cannot measure prepended height.
-        const anchor = [
-          ...scroller.current.querySelectorAll<HTMLElement>('[data-event-id]'),
-        ].find((element) => element.dataset.eventId === anchorId);
+        const anchor = [...scroller.current.querySelectorAll<HTMLElement>('[data-event-id]')].find(
+          (element) => element.dataset.eventId === anchorId,
+        );
         scroller.current.scrollTop =
           anchor && anchorTop !== undefined
             ? scroller.current.scrollTop + anchor.getBoundingClientRect().top - anchorTop
