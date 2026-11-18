@@ -1,3 +1,19 @@
+# 화면 테스트를 다른 포트로 돌리기 (Issue #54)
+
+`npm run test:ui`는 이 작업 폴더의 `npm run dev`를 새로 띄운다(`reuseExistingServer: false`). 기본 포트는 UI 5173·수집기 4318이다. 다른 작업 폴더가 이 포트를 쓰고 있으면 Playwright가 "already used"로 멈추므로, 두 포트를 환경변수로 옮겨서 돌린다.
+
+```bash
+AGENT_OFFICE_UI_PORT=5212 AGENT_OFFICE_API_PORT=4412 npm run test:ui
+AGENT_OFFICE_UI_PORT=5212 AGENT_OFFICE_API_PORT=4412 npx playwright test tests/ui/office.spec.ts
+```
+
+- 같은 값이 `playwright.config.ts`(baseURL·storageState origin·webServer url/env), `vite.config.ts`(dev 포트·`/api` 프록시·dev 페이지 CSP의 HMR 소켓), `server/dev.ts`(수집기 포트·허용 Host/Origin)에 함께 적용된다(`server/dev-ports.ts`). `npm run dev`만 다른 포트로 띄울 때도 같은 변수를 쓴다.
+- 포트가 숫자가 아니거나 두 값이 같으면 기본값으로 넘어가지 않고 바로 오류를 낸다. 실수로 다른 작업의 5173·4318을 쓰지 않게 하려는 것이다.
+- 테스트 수집기는 `.local/ui-tests/` 아래 임시 폴더(`AGENT_OFFICE_DATA_DIR`·`CLAUDE_CONFIG_DIR`·`CODEX_HOME`·`OPENCLAW_STATE_DIR`)만 읽는다. 실제 사용자 기록은 열지 않는다.
+- 2026-11-09 확인: UI 5212·수집기 4412(ko-KR)로 `office.spec.ts`·`onboarding.spec.ts` 28개 통과(격리 수집기 테스트 포함). 실행 중 5173·4318에는 아무것도 띄우지 않았다. dev 페이지 CSP가 `ws://127.0.0.1:5212`로 바뀌고, `/api` 프록시·수집기 직접 호출 200, 옛 Origin(5173)은 403.
+
+---
+
 # 실행 시트 · 2026-11-02 (Issue #319)
 
 - `refactor/launch-core`(#322) 위 `feat/launch-sheet`에서 구현했다. 예전 `TmuxResume`·`SummonExisting`과 IPC 래퍼(`office:tmux-resume`·`tmux-summon`·`orca-launch`·`orca-summon`)를 지우고 `office:launch`에 `open`을 더했다.

@@ -44,4 +44,28 @@ export const conversation = {
   bookmarked: 'Bookmarked · find it in the Memory Drawer',
   unbookmarked: 'Bookmark removed',
   newEntries: 'See new entries',
+  /** Selecting a run of messages to copy or hand to another teammate (#377). */
+  share: {
+    startHere: 'Select from here',
+    menuLabel: 'Message actions',
+    /** The check beside each message while selecting. */
+    pick: 'Select up to this message',
+    start: 'Start',
+    barLabel: 'Selected messages',
+    count: (n: number) => `${n} selected`,
+    pickEnd: 'Click where it ends · Shift+click works too',
+    startHidden: "The first message isn't shown now · pick a start again",
+    copy: (n: number) => `Copy ${n}`,
+    copied: (n: number) => (n === 1 ? 'Copied 1 message' : `Copied ${n} messages`),
+    handTo: 'Send to a teammate',
+    handToLabel: 'Choose a teammate',
+    noTargets: 'No other teammate here has a chat box to take it',
+    handOff: 'Turn on “Send to terminal” in Settings to hand messages on',
+    /** The first line of a handed draft. */
+    from: (name: string) => `From the conversation with ${name}`,
+    handed: (name: string) => `In ${name}'s chat box as a draft · nothing was sent`,
+    tooLong: (max: string) =>
+      `Too long for the chat box (${max} characters at most) · select fewer, or copy them`,
+    cancel: 'Cancel',
+  },
 };

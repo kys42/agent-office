@@ -20,8 +20,9 @@ import type { Screen } from '../composer/screen.js';
  * Keys an adapter may press. Hosts translate them (tmux key names, raw bytes for Orca). Never
  * Esc, Tab, digits or control keys: each of those does something else in some dialog (cancel,
  * amend, pick-and-submit), measured on Claude Code 2.1.296 (docs/development/TERMINAL.md).
+ * `Left` only moves between a question form's tabs (2.1.322 Tabs keybinding: tabs:previous).
  */
-export type PromptKey = 'Up' | 'Down' | 'Right' | 'Enter' | 'Space';
+export type PromptKey = 'Up' | 'Down' | 'Left' | 'Right' | 'Enter' | 'Space';
 
 /** The terminal a dialog is drawn in: tmux or Orca, as an adapter sees it. */
 export interface PromptHost {
@@ -80,6 +81,8 @@ export interface DialogRow {
   input?: boolean;
   /** Below the dialog's inner rule ("Chat about this"): never an answer. */
   aside?: boolean;
+  /** Single-select: `✔` drawn after it (answered before, the dialog went back to it). */
+  picked?: boolean;
 }
 
 /**
@@ -101,6 +104,13 @@ export type Dialog =
       submit?: { cursor: boolean };
       /** The pane's height, when the host reports it. */
       height?: number;
+      /**
+       * `preview`: options on the left, the option's preview on the right, notes instead of a
+       * text row (Claude Code: a single-select question whose options have previews).
+       */
+      layout?: 'preview';
+      /** Preview layout: the notes typed in the terminal ('' when none). */
+      notes?: string;
     }
   | {
       kind: 'review';
@@ -156,10 +166,20 @@ export interface Asked {
  */
 export type Identified = { status: 'one'; asked: Asked } | { status: 'none' | 'many' };
 
-/** What the person picked: options of each question, or one of the dialog's own choices. */
+/**
+ * What the person picked: options of each question, one of the dialog's own choices, or `chat`:
+ * leave the questions unanswered and talk instead (Claude Code's "Chat about this").
+ */
 export type PromptChoice =
   | { kind: 'question'; answers: QuestionAnswer[] }
+  | { kind: 'chat' }
   | { kind: 'plan' | 'permission'; number: number; label: string };
+
+/**
+ * Why a question takes no typed answer from here: `preview` its dialog has notes instead of a
+ * text row (notes are typed in the terminal), `multi` a multi-select question, `none` no text row.
+ */
+export type NoText = 'preview' | 'multi' | 'none';
 
 /**
  * How answering ended. `submitted`: the final key went in after the dialog was verified to hold
@@ -167,7 +187,8 @@ export type PromptChoice =
  * this call's, `partial` it was already partly answered there, `ambiguous` the screen could not
  * tell options or questions apart, `unverified` a key did not do what it should, `lost` the
  * agent stopped being the one at the terminal, `bad-choice` the choice is not a one-shot choice
- * on the dialog, `unreadable` the screen could not be read, `unsupported` no adapter answers here.
+ * on the dialog, `unreadable` the screen could not be read, `unsupported` no adapter answers here,
+ * `notes` notes were typed (or are being typed) beside a preview in the terminal.
  */
 export type AnswerOutcome =
   | { status: 'submitted' }
@@ -181,7 +202,8 @@ export type AnswerOutcome =
         | 'lost'
         | 'bad-choice'
         | 'unreadable'
-        | 'unsupported';
+        | 'unsupported'
+        | 'notes';
       /** Some keys were already pressed (the dialog may show a partial answer). */
       pressed: boolean;
     };
@@ -202,6 +224,10 @@ export interface PromptAdapter {
   hasMore(dialog: Dialog): boolean;
   /** Questions: whether typed words can be sent, per question of the request. */
   takesText(dialog: Dialog, request: InputRequest): boolean[];
+  /** Questions: per question, why typed words cannot be sent (null: they can). */
+  noText?(dialog: Dialog, request: InputRequest): (NoText | null)[];
+  /** Questions: the dialog offers to leave the questions and talk instead (`chat`). */
+  chats?(dialog: Dialog): boolean;
   /**
    * Presses the keys for `choice`, verifying the screen before and after every key. `proceed` is
    * asked before every key: false (paused, gone, no longer waiting) stops at once.

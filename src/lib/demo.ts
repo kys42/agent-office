@@ -109,7 +109,6 @@ export function demoSnapshot(): Snapshot {
   const t = m().demo;
   const snapshot: Snapshot = {
     version: 1,
-    syncing: false,
     error: null,
     lastSync: now,
     preferences: {

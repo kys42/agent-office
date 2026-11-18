@@ -68,6 +68,11 @@ export const desktop: Messages['desktop'] = {
       'Orca가 제때 답하지 않았어요. 아직 화면에 띄우지 않은 탭일 수 있어요. Orca를 앞으로 가져온 뒤 다시 시도해주세요.',
     orcaRefusedSwitch: (reason) => `Orca가 그 터미널로 이동하지 못했어요: ${reason}`,
     orcaFocused: 'Orca의 해당 터미널로 이동했어요',
+    appRaised: (app) => `${app} 앱을 앞으로 가져왔어요. 그 안에서 이 대화의 창을 찾아 주세요.`,
+    appTabFocused: (app) => `${app}의 해당 탭으로 이동했어요`,
+    parkedHint: '그 창의 Claude 에이전트 보기에 있어요. Enter로 다시 열 수 있어요.',
+    noWay:
+      '이 대화가 실행 중인 곳으로 여기서 바로 갈 수 없어요. 그 창을 직접 찾거나, 복제해서 새로 이어가 주세요.',
     tmuxFocused: (label, app) => `${app}에서 tmux ${label} 패널로 이동했어요`,
     tmuxAttached: (label) => `터미널을 열어 tmux ${label}에 연결했어요`,
     tmuxNotRaised: (label) =>
@@ -81,7 +86,7 @@ export const desktop: Messages['desktop'] = {
     tooLong: (max) => `${max}자 이하로 보내 주세요.`,
     notOwner: 'Claude가 지금 터미널 앞에 있지 않아요(일시정지 등). 터미널을 확인해 주세요.',
     notReady:
-      '지금은 입력을 받을 수 없어요(권한 확인·플랜 승인·메뉴·셸 입력 모드 등). 터미널을 확인해 주세요.',
+      "지금은 입력을 받을 수 없어요(질문·권한 확인·플랜 승인·메뉴·셸 입력 모드 등). 질문 창이 열려 있으면 위 카드에서 답하거나 '질문 대신 채팅으로 답하기'를 눌러 주세요. 그 밖에는 터미널을 확인해 주세요.",
     draft: '입력창에 이미 글이 있어요. 터미널을 확인한 뒤 보내 주세요.',
     backupFailed: '입력창의 글을 클립보드에 복사하지 못해 지우지도 보내지도 않았어요.',
     clearFailed: (agent) =>

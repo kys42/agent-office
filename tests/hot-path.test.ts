@@ -340,14 +340,23 @@ test('stop() leaves no hot timer or file watch behind', async () => {
   assert.equal(o.service.watchedFiles().length, 1);
   await appendFile(o.file(id), progress(id, Date.now(), '마지막'));
   await sleep(120);
-  await o.done();
-  assert.deepEqual(o.service.watchedFiles(), []);
-  assert.deepEqual(o.service.hotSessions(), []);
-  assert.equal((o.service as any).hotTimer, null);
-  assert.equal((o.service as any).hintTimer, null);
-  assert.equal((o.service as any).timer, null);
-  assert.ok(timers() <= before, 'no timer left running');
-  assert.ok(!process.getActiveResourcesInfo().includes('FSEventWrap'), 'no watch left open');
+  // A hot pass in flight when stop() comes (a tick or the watch's hint) settles after it and
+  // must not bring anything back (#103). Always have one in flight, stop, and look only once
+  // it has finished — not on whatever a timer happened to be doing.
+  const inFlight = o.service.hotTick();
+  o.service.stop();
+  await inFlight;
+  try {
+    assert.deepEqual(o.service.watchedFiles(), []);
+    assert.deepEqual(o.service.hotSessions(), []);
+    assert.equal((o.service as any).hotTimer, null);
+    assert.equal((o.service as any).hintTimer, null);
+    assert.equal((o.service as any).timer, null);
+    assert.ok(timers() <= before, 'no timer left running');
+    assert.ok(!process.getActiveResourcesInfo().includes('FSEventWrap'), 'no watch left open');
+  } finally {
+    await o.done();
+  }
 });
 
 test('A partial upsert keeps the provider’s other stored sessions', async () => {

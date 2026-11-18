@@ -1,4 +1,13 @@
 export const federation = {
+  tinyColor: '쪼꼬미 이름표 색',
+  colors: {
+    sky: '하늘색',
+    lilac: '연보라',
+    mint: '민트',
+    peach: '살구색',
+    rose: '장미색',
+    gold: '금색',
+  },
   codexConnection: '이 컴퓨터의 Codex 원격 연결',
   codexConnectionOff: '자동으로 찾기',
   codexConnectionHint:

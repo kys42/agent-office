@@ -58,6 +58,8 @@ import {
   WandSparkles,
   type LucideIcon,
   Pin,
+  PackageOpen,
+  FileText,
 } from 'lucide-react';
 import type {
   AnswerSettings,
@@ -603,8 +605,10 @@ export function Settings({
                           key={group}
                           aria-pressed={counted}
                           // The pill counts at least one group: the last one stays on.
+                          // Shared by every numbers pill: off only when none of them counts.
                           disabled={
-                            !shows.pet.tally || (counted && shows.pet.tallyGroups.length === 1)
+                            !(shows.pet.tally || shows.dock.tally || shows.tiny.tally) ||
+                            (counted && shows.pet.tallyGroups.length === 1)
                           }
                           onClick={() =>
                             setView('pet', {
@@ -717,6 +721,13 @@ export function Settings({
               </select>
             </div>
             <SwitchRow
+              icon={Hash}
+              label={v.desk.tally}
+              hint={v.desk.tallyHint}
+              checked={shows.dock.tally}
+              onChange={() => setView('dock', { tally: !shows.dock.tally })}
+            />
+            <SwitchRow
               icon={MessageSquareOff}
               label={v.desk.hideRead}
               hint={v.desk.hideReadHint}
@@ -742,6 +753,13 @@ export function Settings({
               />
             }
           >
+            <SwitchRow
+              icon={Hash}
+              label={v.desk.tally}
+              hint={v.desk.tinyTallyHint}
+              checked={shows.tiny.tally}
+              onChange={() => setView('tiny', { tally: !shows.tiny.tally })}
+            />
             <SwitchRow
               icon={Tag}
               label={s.dock.tinyNames}
@@ -769,6 +787,22 @@ export function Settings({
               {deskSwitch('office', 'papers', Files)}
               {deskSwitch('office', 'beacon', Lightbulb)}
               {deskSwitch('office', 'focus', Flame)}
+              {/* The work card (big office and popup cards alike) lists outputs (#350). */}
+              <SwitchRow
+                icon={PackageOpen}
+                label={v.desk.cardOutputs}
+                hint={v.desk.cardOutputsHint}
+                checked={view.cardOutputs}
+                onChange={() => onPrefs({ cardOutputs: !view.cardOutputs })}
+              />
+              {/* The card's chat puts outputs under the message that made them (#358). */}
+              <SwitchRow
+                icon={FileText}
+                label={v.desk.chatOutputs}
+                hint={v.desk.chatOutputsHint}
+                checked={view.chatOutputs}
+                onChange={() => onPrefs({ chatOutputs: !view.chatOutputs })}
+              />
             </>
           }
         >

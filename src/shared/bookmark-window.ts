@@ -12,18 +12,29 @@ export const READER_WINDOW_MAX = 8;
 /** Where a reader window's size is remembered (userData). */
 export const READER_WINDOW_SIZE_FILE = 'reader-window-size.json';
 
-/** What a reader window shows: one bookmark, by its id. */
+/**
+ * What a reader window shows: one bookmark, or one recorded output of a session (#350, a
+ * markdown or HTML file it made), by its id.
+ */
 export interface ReaderTarget {
   id: string;
+  /** Absent: a bookmark (as every reader window before outputs). */
+  kind?: 'bookmark' | 'output';
 }
 
-/** What a window may ask to read: a bookmark id, nothing else (never its text). */
+/** What a window may ask to read: an id and its kind, nothing else (never a path or text). */
 export function parseReaderTarget(raw: unknown): ReaderTarget {
-  const t = raw as { id?: unknown } | null;
+  const t = raw as { id?: unknown; kind?: unknown } | null;
   if (!t || typeof t !== 'object' || Array.isArray(t)) throw new Error('bad target');
   if (typeof t.id !== 'string' || !t.id.length || t.id.length > 100) throw new Error('bad target');
-  return { id: t.id };
+  if (t.kind !== undefined && t.kind !== 'bookmark' && t.kind !== 'output')
+    throw new Error('bad target');
+  return t.kind === 'output' ? { id: t.id, kind: 'output' } : { id: t.id };
 }
+
+/** One reader window per bookmark and per output: their keys never meet. */
+export const readerKey = (target: ReaderTarget) =>
+  target.kind === 'output' ? `output:${target.id}` : target.id;
 
 /**
  * How "read saved conversation" opens: its own window in the desktop app, or the in-page
@@ -32,3 +43,10 @@ export function parseReaderTarget(raw: unknown): ReaderTarget {
 export function readerOpens({ windows, demo }: { windows: boolean; demo: boolean }) {
   return windows && !demo ? ('window' as const) : ('modal' as const);
 }
+
+/**
+ * Whether a reader window asked for again while open reads what it shows again: an output's
+ * file may have changed since (#350). A bookmark is a saved copy and re-reads on its own stamp.
+ */
+export const rereadsOnReopen = (opened: 'opened' | 'reopened', target: ReaderTarget) =>
+  opened === 'reopened' && target.kind === 'output';

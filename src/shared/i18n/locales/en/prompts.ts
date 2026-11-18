@@ -27,6 +27,21 @@ export const prompts = {
     /** The screen shows the request, but none of its choices is a one-time one. */
     noChoice: 'Its prompt has no one-time choice to make here right now. Answer in the terminal.',
     checking: 'Reading the terminal…',
+    /** Per question: why no typed answer can be sent from here (PromptView.noText). */
+    noText: {
+      preview:
+        'This question shows previews, so it has no text row. Add notes (n) in the terminal.',
+      multi: 'Type your own answer to a pick-any question in the terminal.',
+      none: 'This question takes no typed answer.',
+    },
+    /** An option's preview (a mockup or snippet the agent attached), folded by default. */
+    showPreview: 'Show preview',
+    hidePreview: 'Hide preview',
+    previewCut: 'Long preview: only its start is kept here.',
+    /** "Chat about this": leave the questions and talk first. */
+    chat: 'Answer by chatting instead',
+    chatHint:
+      'Closes the questions and tells Claude you want to talk about them first. When Claude asks what, reply in the chat below ("Chat about this" takes no words itself).',
     /** Answering is not on yet: the first press asks once. */
     consent: {
       unset: 'Your first answer from here asks once whether to allow it.',
@@ -44,6 +59,8 @@ export const prompts = {
     unreadable: 'Could not read its terminal screen.',
     'no-request': 'Nothing open to answer.',
     unverifiable: "This request can't be checked against the screen. Answer in the terminal.",
+    unknown:
+      "The prompt open on its terminal is drawn in a way the app can't read yet. Answer in the terminal.",
   },
   /** Desktop: results and refusals of an answer. */
   result: {
@@ -69,6 +86,10 @@ export const prompts = {
     badChoice: "That choice isn't a one-time choice on the prompt.",
     otherTooLong: (max: string) => `Keep your own answer to ${max} characters.`,
     otherEmpty: 'Type your own answer first.',
+    notes:
+      "Notes were typed (or are being typed) in the terminal. They can't be sent from here: finish answering there.",
+    chatted: (host: string) =>
+      `Closed the questions in ${host} to chat instead. When Claude asks what, reply in the chat.`,
     unsupported: (agent: string) => `${agent} prompts can't be answered from here.`,
     noTarget: 'No Orca or tmux terminal found to answer in.',
     unreadable: (host: string) => `Could not read the ${host} screen, so nothing was sent.`,

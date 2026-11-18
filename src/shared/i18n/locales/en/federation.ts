@@ -1,4 +1,6 @@
 export const federation = {
+  tinyColor: 'Tiny nameplate color',
+  colors: { sky: 'Sky', lilac: 'Lilac', mint: 'Mint', peach: 'Peach', rose: 'Rose', gold: 'Gold' },
   codexConnection: 'Codex remote connection on this computer',
   codexConnectionOff: 'Find automatically',
   codexConnectionHint:

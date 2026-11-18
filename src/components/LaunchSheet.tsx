@@ -127,6 +127,13 @@ export function LaunchSheet({
             {startLabel(a.destination)}
           </button>
         );
+      case 'fork':
+        return (
+          <button key="fork" className={cls} disabled={busy} onClick={() => l.act(a)}>
+            <GitFork size={14} aria-hidden="true" />
+            {s.cardFork}
+          </button>
+        );
     }
   };
   const progress = (() => {

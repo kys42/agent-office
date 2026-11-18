@@ -10,6 +10,8 @@ import {
   petSummary,
   PET_FRESH_MS,
   residentLabel,
+  tallyCounts,
+  tallyMembers,
 } from '../src/shared/office-model.js';
 import type { OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
 import { setLocale } from '../src/shared/i18n/index.js';
@@ -195,4 +197,52 @@ test('screen sharing masks names, projects and activity in one place', () => {
   assert.equal(open.name, '코코');
   assert.equal(open.project, 'secret-project');
   assert.match(open.detail ?? '', / · /);
+});
+
+test('the numbers pill counts the chosen groups, and lists the same desks it counts', () => {
+  const working = make('w', { officeSeat: 0, status: 'work', updatedAt: now - 5_000 });
+  const calling = make('c', { officeSeat: 1, status: 'call', updatedAt: now - 5_000 });
+  const hidden = make('h', {
+    officeSeat: 2,
+    status: 'work',
+    updatedAt: now - 5_000,
+    hiddenAt: now - 60_000,
+  });
+  const helper = make('helper', {
+    relation: { kind: 'subagent', parentNativeId: 'w', source: 'fixture' },
+    parentId: 'w',
+    status: 'work',
+    updatedAt: now - 5_000,
+  });
+  const model = buildOfficeModel(snap([working, calling, hidden, helper]), now);
+  const all = ['attention', 'results', 'working', 'standby'] as const;
+  // Triage order, empty groups left out; a hidden colleague is not counted, a helper is.
+  assert.deepEqual(tallyCounts(model, all), [
+    { group: 'attention', count: 1 },
+    { group: 'working', count: 2 },
+  ]);
+  // Only the chosen groups, whatever order they come in.
+  assert.deepEqual(tallyCounts(model, ['working', 'attention']), [
+    { group: 'attention', count: 1 },
+    { group: 'working', count: 2 },
+  ]);
+  assert.deepEqual(tallyCounts(model, ['working']), [{ group: 'working', count: 2 }]);
+  // Nobody in any chosen group: they show at 0 rather than vanishing.
+  assert.deepEqual(tallyCounts(model, ['results', 'standby']), [
+    { group: 'results', count: 0 },
+    { group: 'standby', count: 0 },
+  ]);
+  assert.deepEqual(tallyCounts(model, []), []);
+  // A number lists exactly the desks it counts: the helper too, the hidden colleague not.
+  for (const { group, count } of tallyCounts(model, all))
+    assert.equal(tallyMembers(model, group).length, count);
+  assert.deepEqual(
+    tallyMembers(model, 'working').map((v) => v.session.id),
+    ['w', 'helper'],
+  );
+  assert.deepEqual(
+    tallyMembers(model, 'attention').map((v) => v.session.id),
+    ['c'],
+  );
+  assert.deepEqual(tallyMembers(model, 'results'), []);
 });

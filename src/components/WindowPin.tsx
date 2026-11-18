@@ -7,11 +7,12 @@ import { useI18n } from '../lib/i18n';
 
 /**
  * A card window's pin, drawn for its three states: an empty pin (the preview), a filled pin
- * (kept open, an ordinary window) and a filled pin with a small up arrow (kept open on top).
+ * (kept open, an ordinary window) and a filled pin with a small up arrow (kept open on top). A
+ * card in its own window is kept open too (its pin button is not shown there).
  */
 export function CardPinIcon({ pin }: { pin: CardPin }) {
   if (pin === 'off') return <Pin size={15} />;
-  if (pin === 'pinned') return <Pin size={15} fill="currentColor" />;
+  if (pin === 'pinned' || pin === 'window') return <Pin size={15} fill="currentColor" />;
   return (
     <span className="pin-top-icon">
       <Pin size={15} fill="currentColor" />

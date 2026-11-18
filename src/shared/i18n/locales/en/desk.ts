@@ -79,8 +79,6 @@ export const desk = {
   // The office row and floor desks along the screen edge.
   row: {
     reorderHint: 'Drag to reorder within the zone',
-    refresh: 'Refresh',
-    refreshTitle: 'Refresh · check the records again now (restarts a stalled collector too)',
     openCard: (name: string) => `Open ${name}'s work card`,
     cardTitle: 'Open as popup',
     empty: 'Waiting for teammate activity.',
@@ -99,26 +97,11 @@ export const desk = {
     pillMove: 'Move the tool bar',
     pillHint:
       'Drag left or right · ← → (Shift: bigger) · Home/End: either end · Double-click: back to the right end',
-    settings: 'Settings',
-    settingsTitle: 'Open the settings window',
-    toRow: 'Show as office row',
-    toFloor: 'Show as floor desks',
-    toRowTitle: 'Office row · zone rugs and name cards',
-    toFloorTitle: 'Floor desks · just desks along the bottom edge, flags for zones',
-    expand: 'Expand the office',
-    expandTitle: 'Open the big office',
-    collapse: 'Collapse the desk row',
-    collapseTitle: 'Collapse to pet · Esc',
-    tiny: 'Show small',
-    tinyTitle: 'Show small · status only, no bubbles or flags',
-    normal: 'Show full size',
-    normalTitle: 'Show full size · bubbles and name cards come back',
     tinyDesk: (work: string, dot?: 'attention' | 'error' | 'reply') =>
       dot
         ? `${work}, ${dot === 'attention' ? 'calling' : dot === 'error' ? 'error' : 'new reply'}`
         : work,
     tinyWaiting: (n: number) => `${n} waiting for you`,
     hide: 'Hide the desk pet',
-    hideTitle: 'Hide · reopen it from the tray',
   },
 };

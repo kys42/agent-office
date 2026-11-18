@@ -6,13 +6,24 @@ import {
   sameText,
   type ClueSession,
 } from '../desktop/orca-sleeping.js';
-import { checkDuplicate, decideDuplicate, duplicateNote } from '../desktop/launch-guard.js';
+import {
+  checkDuplicate,
+  decideDuplicate,
+  duplicateNote,
+  sleepingWorkspace,
+} from '../desktop/launch-guard.js';
 import { OrcaLaunch, type OrcaLaunchDeps } from '../desktop/orca-launch.js';
 import { LaunchCore, type LaunchDestination, type LaunchTarget } from '../desktop/launch/core.js';
 import { LaunchQueue } from '../desktop/launch/pipeline.js';
 import { PendingLaunches } from '../desktop/pending-launch.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
-import { duplicateActions, duplicateView, resultView } from '../src/shared/launch-sheet.js';
+import {
+  duplicateActions,
+  duplicateView,
+  resultView,
+  sleepingRevealed,
+  sleepingRevealedToast,
+} from '../src/shared/launch-sheet.js';
 import type { DuplicateCheck, OfficeEvent } from '../src/shared/types.js';
 
 /**
@@ -102,18 +113,26 @@ test('a workspace sleeps only with no terminal attached; sub-agents and other ho
 test('matched by the last request, the last answer cut short, or the title', () => {
   const other = agent();
   // The last request, equal.
+  // Found carries the workspace's folder and the matched agent's tab (#380), for waking it.
   assert.deepEqual(
-    matchSleeping(rows(worktree({ agents: [other, agent({ prompt: REQUEST })] })), session()),
-    { kind: 'found', workspace: 'app' },
+    matchSleeping(
+      rows(worktree({ agents: [other, agent({ prompt: REQUEST, paneKey: 'tab-1:leaf-1' })] })),
+      session(),
+    ),
+    { kind: 'found', workspace: 'app', path: ROOT, paneKey: 'tab-1:leaf-1' },
   );
   // Orca's last answer cut short (a prefix of it), with its own truncation mark.
   const cut = ANSWER.slice(0, 40) + '…';
   assert.deepEqual(
     matchSleeping(
-      rows(worktree({ agents: [other, agent({ prompt: '', lastAssistantMessage: cut })] })),
+      rows(
+        worktree({
+          agents: [other, agent({ prompt: '', lastAssistantMessage: cut, paneKey: 'tab-2:a' })],
+        }),
+      ),
       session(),
     ),
-    { kind: 'found', workspace: 'app' },
+    { kind: 'found', workspace: 'app', path: ROOT, paneKey: 'tab-2:a' },
   );
   // Its title, as the task title Orca shows.
   assert.deepEqual(
@@ -122,21 +141,27 @@ test('matched by the last request, the last answer cut short, or the title', () 
         worktree({
           agents: [
             other,
-            agent({ prompt: '', lastAssistantMessage: '', taskTitle: '로그인 오류 문구 정리' }),
+            agent({
+              prompt: '',
+              lastAssistantMessage: '',
+              taskTitle: '로그인 오류 문구 정리',
+              paneKey: 'tab-3:b',
+            }),
           ],
         }),
       ),
       session({ events: [] }),
     ),
-    { kind: 'found', workspace: 'app' },
+    { kind: 'found', workspace: 'app', path: ROOT, paneKey: 'tab-3:b' },
   );
-  // A conversation in a folder inside the workspace is matched there too.
-  assert.equal(
+  // A conversation in a folder inside the workspace is matched there too: the folder woken is
+  // the workspace's own, not the conversation's.
+  assert.deepEqual(
     matchSleeping(
-      rows(worktree({ agents: [agent({ prompt: REQUEST })] })),
+      rows(worktree({ agents: [agent({ prompt: REQUEST, paneKey: 'tab-4:c' })] })),
       session({ cwd: ROOT + '/packages/web' }),
-    ).kind,
-    'found',
+    ),
+    { kind: 'found', workspace: 'app', path: ROOT, paneKey: 'tab-4:c' },
   );
 });
 
@@ -167,8 +192,8 @@ test('none or several matching agents is unknown, with how many of its kind rest
   assert.deepEqual(matchSleeping(two, session()), {
     kind: 'unknown',
     workspace: 'app',
+    path: ROOT,
     count: 2,
-    agent: 'Claude',
   });
   const unmatched = rows(
     worktree({ agents: [agent(), agent(), agent(), agent({ agentType: 'codex' })] }),
@@ -176,8 +201,8 @@ test('none or several matching agents is unknown, with how many of its kind rest
   assert.deepEqual(matchSleeping(unmatched, session()), {
     kind: 'unknown',
     workspace: 'app',
+    path: ROOT,
     count: 3,
-    agent: 'Claude',
   });
   // Another known conversation of the workspace fits the same agent: it may be that one's.
   const one = rows(worktree({ agents: [agent({ prompt: REQUEST })] }));
@@ -190,7 +215,46 @@ test('none or several matching agents is unknown, with how many of its kind rest
   );
 });
 
-test('another workspace, an active one, or an agent of another kind gives no evidence', () => {
+test('a sleeping workspace that lists no tab of it, or tabs without text, is still a caution', () => {
+  // Orca lists no agent at all, though it starts the tabs it holds once the workspace opens.
+  assert.deepEqual(matchSleeping(rows(worktree({ agents: [] })), session()), {
+    kind: 'unknown',
+    workspace: 'app',
+    path: ROOT,
+  });
+  // Only another agent's tabs are listed: its own may still come back there.
+  assert.deepEqual(
+    matchSleeping(
+      rows(worktree({ agents: [agent({ agentType: 'codex', prompt: REQUEST })] })),
+      session(),
+    ),
+    { kind: 'unknown', workspace: 'app', path: ROOT },
+  );
+  // Tabs of its agent with no request, answer or title to compare.
+  const blank = () => agent({ prompt: undefined, lastAssistantMessage: undefined });
+  assert.deepEqual(matchSleeping(rows(worktree({ agents: [blank(), blank()] })), session()), {
+    kind: 'unknown',
+    workspace: 'app',
+    path: ROOT,
+    count: 2,
+  });
+  // A conversation with no text of its own either, in a folder inside that workspace.
+  assert.deepEqual(
+    matchSleeping(
+      rows(worktree({ agents: [] })),
+      session({ cwd: ROOT + '/packages/web', events: [], title: '' }),
+    ),
+    { kind: 'unknown', workspace: 'app', path: ROOT },
+  );
+  // A Codex conversation the same way.
+  assert.deepEqual(matchSleeping(rows(worktree({ agents: [] })), session({ provider: 'codex' })), {
+    kind: 'unknown',
+    workspace: 'app',
+    path: ROOT,
+  });
+});
+
+test('another workspace, an active one, or an agent Orca does not know gives no evidence', () => {
   const sleepingAgents = { agents: [agent({ prompt: REQUEST })] };
   // Another workspace, and one whose name only starts like the folder.
   assert.deepEqual(
@@ -203,14 +267,16 @@ test('another workspace, an active one, or an agent of another kind gives no evi
     ),
     { kind: 'none' },
   );
-  // Its workspace has terminals: left to `terminal list` (the Orca tab check).
+  // Its workspace has terminals: left to `terminal list` (the Orca tab check), agents or not.
   for (const live of [
     { hasAttachedPty: true, liveTerminalCount: 3 },
     { isActive: true, hasAttachedPty: true, liveTerminalCount: 1 },
+    { hasAttachedPty: false, liveTerminalCount: 2 },
   ])
-    assert.deepEqual(matchSleeping(rows(worktree({ ...live, ...sleepingAgents })), session()), {
-      kind: 'none',
-    });
+    for (const agents of [sleepingAgents, { agents: [] }])
+      assert.deepEqual(matchSleeping(rows(worktree({ ...live, ...agents })), session()), {
+        kind: 'none',
+      });
   // A nested workspace with terminals holds the folder, its sleeping parent does not count.
   assert.deepEqual(
     matchSleeping(
@@ -222,14 +288,7 @@ test('another workspace, an active one, or an agent of another kind gives no evi
     ),
     { kind: 'none' },
   );
-  // Only Codex agents rest there; an agent Orca does not know; no folder.
-  assert.deepEqual(
-    matchSleeping(
-      rows(worktree({ agents: [agent({ agentType: 'codex', prompt: REQUEST })] })),
-      session(),
-    ),
-    { kind: 'none' },
-  );
+  // An agent Orca does not know; no folder.
   assert.deepEqual(
     matchSleeping(rows(worktree(sleepingAgents)), session({ provider: 'openclaw' })),
     {
@@ -243,22 +302,58 @@ test('another workspace, an active one, or an agent of another kind gives no evi
 
 const none = { kind: 'none' } as const;
 const evidence = { agent: none, orcaTab: none, ownTmux: none };
+const asleep = { kind: 'found', workspace: 'app', path: ROOT, paneKey: 'tab-1:leaf-1' } as const;
 
 test('the decision: a sleeping tab is open in Orca; several are unknown; running still wins', () => {
   assert.deepEqual(
-    decideDuplicate({ ...evidence, orcaSleeping: { kind: 'found', workspace: 'app' } }),
+    decideDuplicate({ ...evidence, orcaSleeping: asleep }),
+    // Only the name: the folder and the tab stay in main.
     { state: 'open', where: 'orca', sleeping: { workspace: 'app' } },
   );
-  const several = { kind: 'unknown', workspace: 'app', count: 2, agent: 'Claude' } as const;
+  const several = { kind: 'unknown', workspace: 'app', path: ROOT, count: 2 } as const;
   assert.deepEqual(decideDuplicate({ ...evidence, orcaSleeping: several }), {
     state: 'unknown',
-    sleeping: { workspace: 'app', count: 2, agent: 'Claude' },
+    sleeping: { workspace: 'app', count: 2 },
+  });
+  // No tab listed there: the same caution, without a count.
+  const unlisted = { kind: 'unknown', workspace: 'app', path: ROOT } as const;
+  assert.deepEqual(decideDuplicate({ ...evidence, orcaSleeping: unlisted }), {
+    state: 'unknown',
+    sleeping: { workspace: 'app' },
+  });
+  // It beats a part that could not be verified: the sleeping workspace is the way to check.
+  assert.deepEqual(
+    decideDuplicate({ ...evidence, agent: { kind: 'unknown' }, orcaSleeping: unlisted }),
+    { state: 'unknown', sleeping: { workspace: 'app' } },
+  );
+  // Last seen in its own tmux session: the normal rules win (running, or open there).
+  assert.deepEqual(
+    decideDuplicate({
+      ...evidence,
+      ownTmux: { kind: 'found', terminal: null },
+      orcaSleeping: unlisted,
+    }),
+    { state: 'open', where: 'tmux' },
+  );
+  assert.deepEqual(
+    decideDuplicate({
+      ...evidence,
+      agent: { kind: 'found', terminal: { where: 'other' } },
+      orcaSleeping: unlisted,
+    }),
+    { state: 'running', where: 'other' },
+  );
+  // A held launch keeps its own answer too.
+  assert.deepEqual(decideDuplicate({ ...evidence, pending: 'tmux', orcaSleeping: unlisted }), {
+    state: 'open',
+    where: 'tmux',
+    pending: true,
   });
   assert.deepEqual(
     decideDuplicate({
       ...evidence,
       agent: { kind: 'found', terminal: { where: 'tmux' } },
-      orcaSleeping: { kind: 'found', workspace: 'app' },
+      orcaSleeping: asleep,
     }),
     { state: 'running', where: 'tmux' },
   );
@@ -287,21 +382,114 @@ test('Orca failing to answer is no evidence: nothing is blocked or cautioned', a
   assert.deepEqual(
     await checkDuplicate({
       ...deps,
-      orcaSleeping: async () => ({ kind: 'found', workspace: 'app' }),
+      orcaSleeping: async () => asleep,
     }),
     { state: 'open', where: 'orca', sleeping: { workspace: 'app' } },
   );
+  // The whole lookup from `worktree ps` failing (main gives `none`): nothing either.
+  assert.deepEqual(await checkDuplicate({ ...deps, orcaSleeping: async () => none }), {
+    state: 'none',
+  });
 });
 
-test('the native confirmation names the sleeping workspace or how many tabs rest there', () => {
+test('the native confirmation names the sleeping workspace it is, or may be, in', () => {
   assert.match(
     duplicateNote({ state: 'open', where: 'orca', sleeping: { workspace: 'app' } }),
-    /잠든 Orca 작업 공간\(app\)/,
+    /잠든 Orca 작업 공간\(app\)에 열려 있어요/,
   );
-  assert.match(
-    duplicateNote({ state: 'unknown', sleeping: { workspace: 'app', count: 3, agent: 'Claude' } }),
-    /Claude 탭이 3개/,
+  for (const sleeping of [{ workspace: 'app', count: 3 }, { workspace: 'app' }])
+    assert.match(
+      duplicateNote({ state: 'unknown', sleeping }),
+      /잠든 Orca 작업 공간\(app\)에 남아 있을 수 있어요.*먼저 그 작업 공간을 열어 확인하세요/s,
+    );
+});
+
+test("the card's main action leads to the sleeping workspace it is, or may be, in", () => {
+  assert.deepEqual(
+    sleepingWorkspace({ state: 'open', where: 'orca', sleeping: { workspace: 'app' } }),
+    { workspace: 'app', sure: true },
   );
+  assert.deepEqual(sleepingWorkspace({ state: 'unknown', sleeping: { workspace: 'app' } }), {
+    workspace: 'app',
+  });
+  for (const check of [
+    { state: 'none' },
+    { state: 'unknown' },
+    { state: 'open', where: 'tmux' },
+    { state: 'open', where: 'orca' },
+    { state: 'running', where: 'orca' },
+  ] as DuplicateCheck[])
+    assert.equal(sleepingWorkspace(check), null);
+  assert.equal(
+    sleepingRevealedToast({ state: 'unknown', sleeping: { workspace: 'app', count: 2 } }),
+    "Orca를 열었어요. 'app' 작업 공간을 열어 이 대화가 있는지 확인하세요.",
+  );
+  assert.equal(
+    sleepingRevealedToast({ state: 'open', where: 'orca', sleeping: { workspace: 'app' } }),
+    "Orca를 열었어요. 'app' 작업 공간을 열면 이 대화 탭이 다시 살아나요.",
+  );
+  assert.equal(sleepingRevealedToast({ state: 'unknown' }), '');
+  assert.equal(sleepingRevealedToast(undefined), '');
+  // Privacy mode: the workspace's name is left out.
+  assert.equal(
+    sleepingRevealed(false),
+    'Orca를 열었어요. 작업 공간을 열어 이 대화가 있는지 확인하세요.',
+  );
+});
+
+test('"Go to Orca" says what it did: its tab, its workspace woken, or only Orca in front (#380)', () => {
+  const sure = { state: 'open', where: 'orca', sleeping: { workspace: 'app' } } as const;
+  const maybe = { state: 'unknown', sleeping: { workspace: 'app', count: 2 } } as const;
+  assert.equal(
+    sleepingRevealed(true, 'app', 'tab'),
+    "Orca에서 'app' 작업 공간의 이 대화 탭으로 이동했어요.",
+  );
+  assert.equal(
+    sleepingRevealed(true, 'app', 'workspace'),
+    "Orca에서 'app' 작업 공간을 열었어요. 이 대화 탭도 곧 다시 살아나요.",
+  );
+  assert.equal(
+    sleepingRevealed(false, 'app', 'workspace'),
+    "Orca에서 'app' 작업 공간을 열었어요. 이 대화가 있는지 확인하세요.",
+  );
+  // Waking failed, or main did not say: the older hint, the person opens it there.
+  for (const how of ['front', undefined] as const) {
+    assert.equal(sleepingRevealedToast(sure, how), sleepingRevealedToast(sure));
+    assert.equal(sleepingRevealedToast(maybe, how), sleepingRevealedToast(maybe));
+  }
+  // The sheet chooses from its own check the same way; no sleeping workspace, nothing to say.
+  assert.equal(sleepingRevealedToast(sure, 'tab'), sleepingRevealed(true, 'app', 'tab'));
+  assert.equal(
+    sleepingRevealedToast(maybe, 'workspace'),
+    sleepingRevealed(false, 'app', 'workspace'),
+  );
+  assert.equal(sleepingRevealedToast({ state: 'none' }, 'tab'), '');
+  // Privacy mode: never the workspace's name.
+  assert.equal(sleepingRevealed(true, undefined, 'tab'), 'Orca에서 이 대화 탭으로 이동했어요.');
+  assert.equal(
+    sleepingRevealed(true, undefined, 'workspace'),
+    'Orca에서 그 작업 공간을 열었어요. 이 대화 탭도 곧 다시 살아나요.',
+  );
+  assert.equal(
+    sleepingRevealed(false, undefined, 'workspace'),
+    'Orca에서 그 작업 공간을 열었어요. 이 대화가 있는지 확인하세요.',
+  );
+  setLocale('en');
+  try {
+    assert.equal(
+      sleepingRevealed(true, 'app', 'tab'),
+      'Went to this conversation’s tab in the “app” workspace in Orca.',
+    );
+    assert.equal(
+      sleepingRevealed(false, undefined, 'workspace'),
+      'Opened that workspace in Orca. Check whether this conversation is in it.',
+    );
+    for (const how of ['tab', 'workspace', 'front'] as const)
+      for (const known of [true, false])
+        assert.doesNotMatch(sleepingRevealed(known, undefined, how), /“/);
+  } finally {
+    setLocale('ko');
+  }
 });
 
 function orca(answer: () => string) {
@@ -340,40 +528,63 @@ test('worktree ps is read-only, remembered for a moment, and null when Orca fail
   assert.equal(await missing.workspaces(), null);
 });
 
-test("a fork is never held back by its original's sleeping tab, nor sent to Orca by it", async () => {
-  const sleeping: DuplicateCheck = { state: 'open', where: 'orca', sleeping: { workspace: 'app' } };
-  const destination = (id: 'orca' | 'tmux'): LaunchDestination => ({
-    id,
-    launches: true,
-    place: id,
-    probe: async () => ({ available: true, command: id }),
-    start: async () => ({ state: 'launched' }),
-  });
-  const c = new LaunchCore({
-    destinations: { orca: destination('orca'), tmux: destination('tmux') },
-    pending: new PendingLaunches(),
-    queue: new LaunchQueue(),
-    conversationCheck: () => async () => sleeping,
-    remembered: () => 'tmux',
-  });
-  const base = { provider: 'claude', cwd: ROOT, nativeId: 'abc' } as const;
-  const fork: LaunchTarget = { ...base, kind: 'fork', name: '갈래', from: {} as never };
-  const options = await c.options(fork);
-  assert.deepEqual(options.duplicate, { state: 'none' });
-  assert.equal(options.origin, undefined);
-  assert.equal(options.default, 'tmux');
-  // A resume sees it, and starting anyway still goes through the confirmation.
-  const resume: LaunchTarget = { ...base, kind: 'resume', from: {} as never };
-  assert.deepEqual((await c.options(resume)).duplicate, sleeping);
-  const seen: DuplicateCheck[] = [];
-  const outcome = await c.start(resume, 'tmux', {
-    confirm: async (_probe, check) => (seen.push(check), false),
-  });
-  assert.equal(outcome.state, 'cancelled');
-  assert.deepEqual(seen, [sleeping]);
-});
+const SLEEPING_CHECKS: [string, DuplicateCheck][] = [
+  ['its tab there', { state: 'open', where: 'orca', sleeping: { workspace: 'app' } }],
+  ['no tab listed', { state: 'unknown', sleeping: { workspace: 'app' } }],
+  ['tabs, none surely it', { state: 'unknown', sleeping: { workspace: 'app', count: 2 } }],
+];
 
-test('the sheet: open Orca first, starting only anyway; several tabs are a caution', () => {
+for (const [label, sleeping] of SLEEPING_CHECKS)
+  test(`a sleeping workspace (${label}) holds back only a resume, behind the confirmation`, async () => {
+    const destination = (id: 'orca' | 'tmux' | 'terminalApp'): LaunchDestination => ({
+      id,
+      launches: true,
+      place: id === 'terminalApp' ? 'other' : id,
+      probe: async () => ({ available: true, command: id }),
+      start: async () => ({ state: 'launched' }),
+    });
+    const c = new LaunchCore({
+      destinations: {
+        orca: destination('orca'),
+        tmux: destination('tmux'),
+        terminalApp: destination('terminalApp'),
+      },
+      pending: new PendingLaunches(),
+      queue: new LaunchQueue(),
+      conversationCheck: () => async () => sleeping,
+      remembered: () => 'tmux',
+    });
+    const base = { provider: 'claude', cwd: ROOT, nativeId: 'abc' } as const;
+    const fork: LaunchTarget = { ...base, kind: 'fork', name: '갈래', from: {} as never };
+    const options = await c.options(fork);
+    assert.deepEqual(options.duplicate, { state: 'none' });
+    assert.equal(options.origin, undefined);
+    assert.equal(options.default, 'tmux');
+    const fresh: LaunchTarget = { ...base, kind: 'new', name: '새 동료' };
+    assert.deepEqual((await c.options(fresh)).duplicate, { state: 'none' });
+    // A fork starts with the plain confirmation (no duplicate warning).
+    const forkSeen: DuplicateCheck[] = [];
+    await c.start(fork, 'tmux', {
+      confirm: async (_probe, check) => (forkSeen.push(check), false),
+    });
+    assert.deepEqual(forkSeen, [{ state: 'none' }]);
+    // A resume sees it, and starting anyway anywhere still goes through the confirmation.
+    const resume: LaunchTarget = { ...base, kind: 'resume', from: {} as never };
+    assert.deepEqual((await c.options(resume)).duplicate, sleeping);
+    for (const where of ['tmux', 'terminalApp', 'orca'] as const) {
+      const seen: DuplicateCheck[] = [];
+      const outcome = await c.start(resume, where, {
+        confirm: async (_probe, check) => (seen.push(check), false),
+      });
+      assert.equal(outcome.state, 'cancelled');
+      assert.deepEqual(seen, [sleeping]);
+    }
+    // Confirmed: it starts (the person checked that workspace).
+    const started = await c.start(resume, 'tmux', { confirm: async () => true });
+    assert.equal(started.state, 'launched');
+  });
+
+test('the sheet: open Orca first, starting only anyway; maybe there too', () => {
   const view = duplicateView({ state: 'open', where: 'orca', sleeping: { workspace: 'app' } });
   assert.deepEqual(view, {
     notice:
@@ -383,16 +594,27 @@ test('the sheet: open Orca first, starting only anyway; several tabs are a cauti
     blocks: false,
   });
   assert.deepEqual(duplicateActions(view), [{ kind: 'reveal' }]);
-  const several = duplicateView({
-    state: 'unknown',
-    sleeping: { workspace: 'app', count: 2, agent: 'Claude' },
+  // No tab surely it (several, none listed, no text): the same way first, as a caution.
+  for (const sleeping of [{ workspace: 'app', count: 2 }, { workspace: 'app' }]) {
+    const maybe = duplicateView({ state: 'unknown', sleeping });
+    assert.deepEqual(maybe, {
+      notice:
+        '이 대화가 잠든 Orca 작업 공간(app)에 남아 있을 수 있어요. 먼저 그 작업 공간을 열어 확인하세요.',
+      tone: 'caution',
+      reveal: true,
+      blocks: false,
+    });
+    assert.deepEqual(duplicateActions(maybe), [{ kind: 'reveal' }]);
+  }
+  // An unverified check without a sleeping workspace stays the plain caution.
+  assert.deepEqual(duplicateActions(duplicateView({ state: 'unknown' })), []);
+  const changed = resultView({
+    state: 'refused',
+    destination: 'tmux',
+    reason: m().tmux.changedRefused,
+    duplicate: { state: 'unknown', sleeping: { workspace: 'app' } },
   });
-  assert.deepEqual(several, {
-    notice: '잠든 Orca 작업 공간(app)에 쉬고 있는 Claude 탭이 2개 있어요. 이 대화일 수 있어요.',
-    tone: 'caution',
-    blocks: false,
-  });
-  assert.deepEqual(duplicateActions(several), []);
+  assert.deepEqual(changed && !changed.close && changed.actions, [{ kind: 'reveal' }]);
   // Refused because it changed meanwhile: opening Orca is the way.
   const refused = resultView({
     state: 'refused',

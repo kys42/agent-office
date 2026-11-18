@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { m } from './i18n';
-import type { DuplicateCheck, LaunchPlace } from './types';
+import type { DuplicateCheck, LaunchPlace, RunningHost } from './types';
 
 /**
  * One launch request from a window (#318): what to start, where, and whether to only look
@@ -103,6 +103,18 @@ export interface LaunchOptions {
   /** A fork: where the original conversation runs or is open now, when known. */
   origin?: LaunchPlace;
 }
+
+/** A running place's name as notices say it (#376): another app by its own name. */
+export function hostPlaceName(host: RunningHost): string {
+  return host.app === 'app' && host.name ? host.name : m().tmux.hostPlace[host.app];
+}
+
+/**
+ * Where a running conversation is, as the duplicate check names it: the app read from its
+ * process when no terminal of it was verified, else the verified place.
+ */
+export const runningPlaceName = (check: { where: LaunchPlace; host?: RunningHost }) =>
+  check.host ? hostPlaceName(check.host) : m().tmux.place[check.where];
 
 /**
  * What to tell about a launch held pending (`DuplicateCheck.pending`) at `where`: an Orca tab

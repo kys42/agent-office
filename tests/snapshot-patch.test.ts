@@ -179,10 +179,11 @@ test('The collector sends a changed colleague as a patch and catches a poller up
       version: third.version,
     });
     // Mid-collection, a new client still gets exactly what was published as this version.
-    service.syncing = true;
+    const lastSync = service.lastSync;
+    service.lastSync = -1;
     const boot = (await service.call('snapshot')) as Snapshot;
-    service.syncing = false;
-    assert.equal(boot.syncing, false);
+    service.lastSync = lastSync;
+    assert.equal(boot.lastSync, third.lastSync);
     assert.deepEqual(boot, third);
     // A version it no longer has the changes for: the whole office.
     const whole = (await service.call('snapshot', [first.epoch, -5])) as Snapshot;

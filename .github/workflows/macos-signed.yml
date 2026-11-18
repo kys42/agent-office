@@ -41,6 +41,9 @@ jobs:
       - run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      # Runtime dependencies ship in the signed app. Dev-only tooling advisories (vite and
+      # its globbing deps) never reach users, so they must not block a release.
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run format:check
       - run: npm test
       - run: npm run build

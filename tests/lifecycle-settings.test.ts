@@ -11,6 +11,8 @@ import { mergeSessions } from '../server/adapters/merge.js';
 import { officeZone } from '../src/shared/office.js';
 import { officeResidents } from '../src/shared/residents.js';
 import { demoSnapshot } from '../src/lib/demo.js';
+import { deriveState, runtimeObservation } from '../src/shared/runtime.js';
+import { CANONICAL } from '../src/shared/canonical.js';
 const now = Date.now(),
   day = 86400_000;
 
@@ -109,6 +111,40 @@ test('Task boundary survives long tool tails, transport merge, compact snapshots
     store.upsert([fragment, child], 'codex');
     assert.equal(store.get(parent.id).taskStartedAt, now);
     assert.equal(officeResidents(store.list(), now + 500).hidden.length, 1);
+  } finally {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+test('A longer standby drops the reason the adapter derived with the default hours (#15)', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-stale-reason-'));
+  const store = new OfficeStore(dir);
+  try {
+    // As the adapter stores a call 5 hours old: gone home by the default 4 hours.
+    const updatedAt = now - 5 * 3600_000;
+    const reason = 'Waiting for permission';
+    const state = deriveState('call', updatedAt, now, false, undefined, undefined, CANONICAL);
+    assert.equal(state.status, 'sleep');
+    const s = {
+      ...demoSnapshot().sessions[0],
+      provider: 'claude' as const,
+      updatedAt,
+      status: state.status,
+      observedStatus: 'call' as const,
+      statusEvidence: 'derived' as const,
+      statusReason: state.reason!,
+      runtime: runtimeObservation('call', updatedAt, reason),
+    };
+    store.upsert([s], 'claude');
+    const atDefault = store.get(s.id);
+    assert.equal(atDefault.status, 'sleep');
+    assert.equal(atDefault.statusReason, deriveState('call', updatedAt, now).reason);
+    assert.equal(atDefault.statusEvidence, 'derived');
+    store.preferences({ standbyHours: 8 });
+    const later = store.get(s.id);
+    assert.equal(later.status, 'call');
+    assert.equal(later.statusReason, reason);
+    assert.equal(later.statusEvidence, 'observed');
   } finally {
     store.close();
     await rm(dir, { recursive: true, force: true });

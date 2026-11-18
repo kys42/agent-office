@@ -202,6 +202,14 @@ test('Screen choices (#324) save mode by mode, merge deeply, and refuse unknown 
       office: { branch: false },
       tiny: { effects: false },
     });
+    // The row's and tiny's numbers pill: saved beside the screen's other choices.
+    await call({ dock: { tally: false } });
+    assert.deepEqual(await call({ tiny: { tally: false } }), {
+      pet: { tally: false, tallyGroups: ['attention'], name: 'always' },
+      office: { branch: false },
+      tiny: { effects: false, tally: false },
+      dock: { tally: false },
+    });
     // A patch without views leaves them as they are.
     await service.call('preferences', [{ tinyNames: false }]);
     assert.deepEqual(service.store.preferences().views?.office, { branch: false });
@@ -212,6 +220,9 @@ test('Screen choices (#324) save mode by mode, merge deeply, and refuse unknown 
       { pet: { petting: 'yes' } },
       { pet: { size: 2 } },
       { dock: { hideRead: 1 } },
+      { dock: { tally: 'on' } },
+      { dock: { tallyGroups: ['working'] } },
+      { tiny: { tally: 1 } },
       { tiny: { branch: false } },
       { office: { hideRead: false } },
       { card: { tally: true } },
