@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Route } from '@playwright/test';
 import type { MobileAgent } from '../../src/shared/mobile';
 const local: MobileAgent = {
   id: 'codex:local',
@@ -218,6 +218,54 @@ test('mobile can read beyond 1,000 records in a bounded window and jump back to 
   expect(latestReads).toBe(before + 1);
   await expect(page.getByRole('button', { name: '최신 대화로 돌아가기' })).toHaveCount(0);
   await page.screenshot({ path: '.local/mobile-history-latest.png' });
+});
+
+test('a scheduled refresh cannot cancel going back to the latest messages', async ({ page }) => {
+  test.setTimeout(60000);
+  await mock(page);
+  const window = (end: number) => {
+    const start = Math.max(0, end - 40);
+    return {
+      id: local.id,
+      older: start > 0,
+      events: Array.from({ length: end - start }, (_, i) => ({
+        id: String(start + i),
+        at: start + i,
+        kind: 'user',
+        text: `합성 기록 ${start + i}`,
+      })),
+    };
+  };
+  let hold = false;
+  const held: Route[] = [];
+  await page.route('**/mobile/api/detail', async (route) => {
+    const { before } = route.request().postDataJSON();
+    if (!before && hold) {
+      held.push(route);
+      return;
+    }
+    return route.fulfill({ json: window(before ? Number(before.id) : 1200) });
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1160');
+  const latest = page.getByRole('button', { name: '최신 대화로 돌아가기' });
+  for (let i = 0; i < 20 && !(await latest.isVisible()); i++) {
+    const first = await page.locator('.message').first().getAttribute('data-event-id');
+    await page.getByRole('button', { name: '이전 대화 보기', exact: true }).click();
+    await expect(page.locator('.message').first()).not.toHaveAttribute('data-event-id', first!);
+  }
+  await expect(latest).toBeVisible();
+  hold = true;
+  await latest.click();
+  await expect.poll(() => held.length).toBe(1);
+  // The 5-second refresh replaces that slow read: it must ask for the latest page itself.
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect.poll(() => held.length).toBe(2);
+  hold = false;
+  await held[1].fulfill({ json: window(1200) });
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1160');
+  await expect(latest).toHaveCount(0);
 });
 
 test('a late roster refresh cannot restore colleagues after a newer privacy response', async ({

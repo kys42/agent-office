@@ -133,10 +133,15 @@ function Chat({
   const readVersion = useRef(0);
   const historyVersion = useRef(0);
   const readRequest = useRef<AbortController | null>(null);
+  // A "back to latest" read still waiting for its answer: a poll that replaces (aborts) it
+  // carries the reset on, so the person is never left in history without an error.
+  const resetPending = useRef(false);
   const olderRequest = useRef<AbortController | null>(null);
   const remote = agent.officeId !== 'local';
   const read = useCallback(
-    async (reset = false) => {
+    async (asked = false) => {
+      const reset = asked || resetPending.current;
+      if (reset) resetPending.current = true;
       const version = ++readVersion.current;
       readRequest.current?.abort();
       const controller = new AbortController();
@@ -147,7 +152,7 @@ function Chat({
         !visibilityDenied &&
         !controller.signal.aborted &&
         version === readVersion.current;
-      if (reset) {
+      if (asked) {
         historyVersion.current++;
         olderRequest.current?.abort();
         setOlderBusy(false);
@@ -160,6 +165,7 @@ function Chat({
                 const next = await api<MobileDetail>('detail', { id: agent.id }, controller.signal);
                 if (!current()) return;
                 acceptDetail(newestMobilePage(reset ? null : detailRef.current, next, remote));
+                resetPending.current = false;
                 if (reset) {
                   initial.current = true;
                   atBottom.current = true;
@@ -167,6 +173,8 @@ function Chat({
                 setError('');
               } catch (e) {
                 if (!current()) return;
+                // Failed, not replaced: the error shows, and the button asks again.
+                resetPending.current = false;
                 if (remote || (e instanceof ApiError && [401, 403].includes(e.status)))
                   acceptDetail(null);
                 if (e instanceof ApiError && [401, 403].includes(e.status)) {
