@@ -1,3 +1,11 @@
+## 2026-11-18 — 소유자 승인 전용 macOS 서명 CI
+
+- 최신 main `29a7057`에서 별도 worktree로 작업했다. 서명 workflow를 `kys42`의 main 수동 실행으로 제한하고 재실행자도 확인한다. 버전 태그 자동 실행을 제거했다.
+- 요청 SHA를 고정하고 검증 시작 시 최신 main과 비교한다. action SHA 고정, checkout credential 미보존, 기존 Linux 검증과 macOS 서명·공증·설치 smoke·임시 키체인 정리를 유지한다.
+- GitHub `macos-release` environment를 생성해 reviewer kys42만, branch main만, 관리자 승인 우회 금지로 설정했다. 단독 소유자가 직접 요청·승인하도록 self-review 금지는 끈다. 비밀이 아닌 Team ID·인증서 이름 변수만 등록했다. 개인키 추출/secret 등록·공증 실행·설치 교체는 아직 수행하지 않았다.
+- actionlint 1.7.12, bash 구문, diff 공백 검사와 독립 workflow 리뷰 통과. 런타임 코드를 변경하지 않아 앱 전체 빌드/설치 검수는 로컬에서 반복하지 않는다. 실제 서명 성공은 secret 등록 후 main의 승인된 실행에서 별도 검증한다.
+- 다른 서버의 요청→본인 승인→DMG 다운로드, 키 등록/회전, GitHub 권한과 macOS 최초 권한 승인의 경계를 [macOS 배포](docs/development/MACOS-RELEASE.md)에 기록했다.
+
 ## 2026-11-04 — 전체 사무실
 
 - 여러 사무실 연결 베타의 **전체 사무실**에서 이 컴퓨터와 원격 동료의 작업 상태를 함께 봅니다. 그래픽과 리스트 모두 컴퓨터별 프로젝트를 구분하고, 카드 열기와 앱 재시작 뒤에도 전체 선택을 기억합니다.
