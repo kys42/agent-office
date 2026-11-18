@@ -25,6 +25,8 @@ export const federation = {
   sendPermission: 'Chat credential included',
   readPermission: 'Read only',
   rooms: 'Offices',
+  allOffices: 'All offices',
+  allOfficesHint: 'All computers together',
   localOffice: 'My computer',
   thisComputer: 'This computer',
   remoteOffice: 'Remote office',
