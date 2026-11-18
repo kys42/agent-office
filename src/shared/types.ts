@@ -1192,8 +1192,10 @@ export interface OfficeAPI {
     /** Keystrokes for this window's own view. */
     input: (viewId: string, data: string) => void;
     onData: (cb: (viewId: string, data: Uint8Array) => void) => () => void;
-    /** The view fell behind: clear it and draw this screen instead. */
-    onResync: (cb: (viewId: string, restore: string) => void) => () => void;
+    /** The view fell behind: clear it and draw this screen instead, taken at `cols`×`rows`. */
+    onResync: (
+      cb: (viewId: string, restore: string, cols: number, rows: number) => void,
+    ) => () => void;
     onExit: (
       cb: (viewId: string, exit: { code: number | null; signal: number | null }) => void,
     ) => () => void;

@@ -47,11 +47,18 @@ export default function TermPanel({ target }: { target: TermTarget }) {
     let restoring = false;
     /** The size main has: a resize to it again would only signal the program for nothing. */
     let sent = { cols: 0, rows: 0 };
-    // What may arrive before the attach answer (other IPC channels), per view: its output, and
-    // that it ended or lost its connection.
-    const early = new Map<string, (Uint8Array | string)[]>();
-    const endedEarly = new Set<string>();
-    const lostEarly = new Set<string>();
+    /**
+     * What arrives for a view before it is live (the attach answer comes on another IPC channel,
+     * and its first screen takes a moment to parse), kept in order and replayed then: output, a
+     * fresh screen, its exit, a lost connection.
+     */
+    type Early =
+      | { kind: 'data'; data: Uint8Array | string }
+      | { kind: 'resync'; restore: string; cols: number; rows: number }
+      | { kind: 'exit' }
+      | { kind: 'lost' };
+    const early = new Map<string, Early[]>();
+    const hold = (id: string, event: Early) => early.set(id, [...(early.get(id) ?? []), event]);
     const xterm = new XTerm({
       fontFamily: '"JetBrains Mono", Menlo, Monaco, monospace',
       fontSize: 12,
@@ -107,14 +114,18 @@ export default function TermPanel({ target }: { target: TermTarget }) {
         done?.();
       });
     };
+    /** A fresh screen at the size it was taken (the session's now), then this window's again. */
+    const resync = (restore: string, cols: number, rows: number) => {
+      sent = { cols, rows };
+      replace(restore, cols, rows, () => refit());
+    };
     const offData = term.onData((id, data) => {
       if (id === viewId) draw(data);
-      else if (!viewId) early.set(id, [...(early.get(id) ?? []), data]);
+      else if (!viewId) hold(id, { kind: 'data', data });
     });
-    const offResync = term.onResync((id, restore) => {
-      if (id !== viewId) return;
-      // Taken at the session's size, which this view set; then fitted again.
-      replace(restore, sent.cols || xterm.cols, sent.rows || xterm.rows, () => size());
+    const offResync = term.onResync((id, restore, cols, rows) => {
+      if (id === viewId) resync(restore, cols, rows);
+      else if (!viewId) hold(id, { kind: 'resync', restore, cols, rows });
     });
     const finish = () => {
       viewId = null;
@@ -124,7 +135,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
     const offExit = term.onExit((id) => {
       if (!alive) return;
       if (id === viewId) finish();
-      else if (!viewId) endedEarly.add(id);
+      else if (!viewId) hold(id, { kind: 'exit' });
     });
     // Its connection to the daemon closed without the session ending (the daemon stopped):
     // nothing typed would arrive, so the view lets go and tries once to attach again.
@@ -139,7 +150,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
     const offLost = term.onLost((id) => {
       if (!alive) return;
       if (id === viewId) lose();
-      else if (!viewId) lostEarly.add(id);
+      else if (!viewId) hold(id, { kind: 'lost' });
     });
     const input = xterm.onData((data) => {
       if (!viewId) return;
@@ -169,19 +180,26 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       const wanted = size();
       try {
         const a = await term.command({ type: 'attach', ...wanted });
-        if (!alive || !visible()) {
+        // Gone or hidden meanwhile (before or while its screen was parsed): let go of it.
+        const leave = () => {
           if (!a.exited) void term.command({ type: 'detach', viewId: a.viewId }).catch(() => {});
-          return;
-        }
+          if (alive) setStatus('away');
+        };
+        if (!alive || !visible()) return leave();
         // The screen as the daemon keeps it, parsed at its size, then fitted to this window
         // (main already resized the session to `wanted`, which makes the program draw again).
         await new Promise<void>((done) => replace(a.restore, a.cols, a.rows, done));
-        if (!alive) return;
-        if (a.exited || endedEarly.has(a.viewId)) return finish();
-        if (lostEarly.has(a.viewId)) return lose();
+        if (a.exited) return finish();
+        if (!alive || !visible()) return leave();
         sent = wanted;
         size();
-        for (const chunk of early.get(a.viewId) ?? []) draw(chunk);
+        // What came meanwhile, in order: the last output before an exit is still drawn.
+        for (const event of early.get(a.viewId) ?? []) {
+          if (event.kind === 'data') draw(event.data);
+          else if (event.kind === 'resync') resync(event.restore, event.cols, event.rows);
+          else if (event.kind === 'exit') return finish();
+          else return lose();
+        }
         viewId = a.viewId;
         setStatus('live');
         refit();
@@ -193,8 +211,6 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       } finally {
         attaching = false;
         early.clear();
-        endedEarly.clear();
-        lostEarly.clear();
       }
     };
     const detach = () => {

@@ -1009,8 +1009,8 @@ function setupBuiltinViews(builtin: TermBuiltin) {
     data: (viewId: string, data: Uint8Array) => {
       if (!sender.isDestroyed()) sender.send('office:term-data', viewId, data);
     },
-    resync: (viewId: string, restore: string) => {
-      if (!sender.isDestroyed()) sender.send('office:term-resync', viewId, restore);
+    resync: (viewId: string, restore: string, cols: number, rows: number) => {
+      if (!sender.isDestroyed()) sender.send('office:term-resync', viewId, restore, cols, rows);
     },
     exit: (viewId: string, exit: { code: number | null; signal: number | null }) => {
       if (!sender.isDestroyed())

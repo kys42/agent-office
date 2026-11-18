@@ -19,8 +19,11 @@ import { restoreSequence, type ExitInfo } from './term-host/protocol.js';
 /** Where a view's output goes (the window that attached it). */
 export interface TermViewSink {
   data(viewId: string, data: Uint8Array): void;
-  /** The view fell behind: clear it and draw this instead (output resumes after it). */
-  resync(viewId: string, restore: string): void;
+  /**
+   * The view fell behind: clear it and draw this instead, at the size it was taken (output
+   * resumes after it).
+   */
+  resync(viewId: string, restore: string, cols: number, rows: number): void;
   exit(viewId: string, exit: ExitInfo): void;
   /** Its connection to the daemon closed while the session did not end (the daemon stopped). */
   lost(viewId: string): void;
@@ -67,7 +70,8 @@ export class TermViews {
     }
     client.onOutput((id, data) => id === session && sink.data(viewId, data));
     client.onResync(
-      (id, restore) => id === session && sink.resync(viewId, restoreSequence(restore)),
+      (id, restore) =>
+        id === session && sink.resync(viewId, restoreSequence(restore), restore.cols, restore.rows),
     );
     client.onExit((id, exit) => {
       if (id !== session) return;

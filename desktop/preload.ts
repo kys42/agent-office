@@ -102,8 +102,9 @@ const api: OfficeAPI = {
             ipcRenderer.on('office:term-data', f);
             return () => ipcRenderer.removeListener('office:term-data', f);
           },
-          onResync: (cb: (viewId: string, restore: string) => void) => {
-            const f = (_: unknown, viewId: string, restore: string) => cb(viewId, restore);
+          onResync: (cb: (viewId: string, restore: string, cols: number, rows: number) => void) => {
+            const f = (_: unknown, viewId: string, restore: string, cols: number, rows: number) =>
+              cb(viewId, restore, cols, rows);
             ipcRenderer.on('office:term-resync', f);
             return () => ipcRenderer.removeListener('office:term-resync', f);
           },

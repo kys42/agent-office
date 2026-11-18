@@ -7,11 +7,21 @@ import { demoSnapshot } from '../../src/lib/demo';
 const VIEW = '0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b3c';
 const VIEW2 = '0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b3d';
 
-async function setup(page: Page, options: { exited?: boolean; exitEarly?: boolean } = {}) {
+interface Options {
+  exited?: boolean;
+  /** Before the attach answer: the session's last output (with `exitEarly`), its exit. */
+  exitEarly?: boolean;
+  /** Before the attach answer: a fresh screen from the daemon. */
+  resyncEarly?: boolean;
+  /** The window hides right after the answer, while its first screen is parsed. */
+  hideDuringRestore?: boolean;
+}
+
+async function setup(page: Page, options: Options = {}) {
   const s = demoSnapshot();
   await page.setViewportSize({ width: 640, height: 400 });
   await page.addInitScript(
-    ({ s, VIEW, VIEW2, exited, exitEarly }) => {
+    ({ s, VIEW, VIEW2, exited, exitEarly, resyncEarly, hideDuringRestore }) => {
       const w = window as any;
       w.commands = [];
       w.inputs = [];
@@ -19,9 +29,10 @@ async function setup(page: Page, options: { exited?: boolean; exitEarly?: boolea
       localStorage.setItem('office:onboarding:v1:live', 'seen');
       const data = new Set<(id: string, d: Uint8Array) => void>();
       const exits = new Set<(id: string, e: unknown) => void>();
-      const resyncs = new Set<(id: string, r: string) => void>();
+      const resyncs = new Set<(id: string, r: string, cols: number, rows: number) => void>();
       const losts = new Set<(id: string) => void>();
-      w.resync = (restore: string) => resyncs.forEach((cb) => cb(w.viewId(), restore));
+      w.resync = (restore: string, cols = 80, rows = 20) =>
+        resyncs.forEach((cb) => cb(w.viewId(), restore, cols, rows));
       w.lose = () => losts.forEach((cb) => cb(w.viewId()));
       let attaches = 0;
       w.viewId = () => (attaches > 1 ? VIEW2 : VIEW);
@@ -47,9 +58,13 @@ async function setup(page: Page, options: { exited?: boolean; exitEarly?: boolea
             w.commands.push(c.type === 'resize' ? 'resize' : c);
             if (c.type === 'attach') {
               attaches++;
-              // The session ends right as it attaches: its exit comes before this answer.
-              if (exitEarly) w.exit();
+              // The session ends right as it attaches: its last output and exit come first.
+              if (exitEarly) {
+                w.emit('\r\nfinal-output');
+                w.exit();
+              } else if (resyncEarly) w.resync('\x1b[Hearly-fresh-screen', 80, 20);
               else if (!exited) setTimeout(() => w.emit('\r\nlive-after-attach'), 0);
+              if (hideDuringRestore) setTimeout(() => w.setHidden(true), 0);
               return {
                 viewId: w.viewId(),
                 restore: '\x1b[?2026hrestored-screen ❯\x1b[?2026l',
@@ -86,7 +101,15 @@ async function setup(page: Page, options: { exited?: boolean; exitEarly?: boolea
         },
       };
     },
-    { s, VIEW, VIEW2, exited: !!options.exited, exitEarly: !!options.exitEarly },
+    {
+      s,
+      VIEW,
+      VIEW2,
+      exited: !!options.exited,
+      exitEarly: !!options.exitEarly,
+      resyncEarly: !!options.resyncEarly,
+      hideDuringRestore: !!options.hideDuringRestore,
+    },
   );
   await page.goto('/#term');
 }
@@ -182,9 +205,12 @@ test('a fresh screen from the daemon replaces what was drawn, after what was que
   expect(text).not.toContain('queued-before-resync');
 });
 
-test('an exit that arrives before the attach answer still ends the view', async ({ page }) => {
+test('an exit that arrives before the attach answer still ends the view, after its last output', async ({
+  page,
+}) => {
   await setup(page, { exitEarly: true });
   await expect(page.getByRole('status')).toHaveText('에이전트가 끝났어요.');
+  await expect.poll(() => screenText(page)).toContain('final-output');
   await page.locator('.xterm').click();
   await page.keyboard.type('x');
   expect(await page.evaluate(() => (window as any).inputs.length)).toBe(0);
@@ -199,4 +225,24 @@ test('a lost connection says so and attaches again', async ({ page }) => {
     .poll(async () => (await commands(page)).filter((c: any) => c.type === 'attach').length)
     .toBe(2);
   await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('a fresh screen that arrives before the attach answer is not lost', async ({ page }) => {
+  await setup(page, { resyncEarly: true });
+  await expect.poll(() => screenText(page)).toContain('early-fresh-screen');
+  expect(await screenText(page)).not.toContain('restored-screen');
+});
+
+test('hidden while its first screen is parsed, it lets go instead of going live', async ({
+  page,
+}) => {
+  await setup(page, { hideDuringRestore: true });
+  await expect
+    .poll(async () => (await commands(page)).find((c: any) => c.type === 'detach')?.viewId)
+    .toBe(VIEW);
+  await expect(page.getByRole('status')).toContainText('창이 가려진 동안은 멈춰 있어요');
+  await page.evaluate(() => (window as any).setHidden(false));
+  await expect
+    .poll(async () => (await commands(page)).filter((c: any) => c.type === 'attach').length)
+    .toBe(2);
 });
