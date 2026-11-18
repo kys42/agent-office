@@ -58,8 +58,10 @@ export const DEFAULT_LIMITS: HostLimits = {
   idleMs: 60_000,
   exitRetentionMs: 5 * 60_000,
   helloTimeoutMs: 5_000,
-  defaultScrollback: 1_000,
-  maxScrollback: 10_000,
+  // The conversation itself is read from the agent's transcript; the terminal keeps its screen
+  // and a short tail only (about 0.3-0.6 MB a session at 200 columns).
+  defaultScrollback: 200,
+  maxScrollback: 2_000,
   maxSessions: 64,
   highWaterBytes: 512 * 1024,
   maxLagBytes: 4 * 1024 * 1024,

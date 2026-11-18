@@ -83,7 +83,7 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
 
 - `list`는 세션별로 `scrollbackLines`, `approxBytes`, `bytesIn`/`bytesOut`/`bytesWritten`, `droppedBytes`를 주고, 합계와 데몬 RSS·힙도 줍니다.
 - 세션이 끝나면 화면을 reset한 뒤 dispose하고 1초 뒤 GC합니다(`--expose-gc`). Node에서 ArrayBuffer가 49MB에서 0.1MB로 줄었습니다. RSS는 할당기가 쥐고 있어 바로 줄지 않지만 새 세션이 다시 씁니다.
-- 기본 scrollback은 1,000줄이고 `create`의 `scrollback`(최대 10,000)이나 데몬 `--scrollback`으로 바꿉니다.
+- 기본 scrollback은 200줄입니다. 대화 내용은 에이전트 기록 파일에서 읽으므로, 터미널은 지금 화면과 짧은 꼬리만 들고 있습니다. 200열 기준 세션당 약 0.3~0.6MB입니다(1,000줄은 약 1.9MB). `create`의 `scrollback`(최대 2,000)이나 데몬 `--scrollback`으로 바꿉니다.
 
 ## 개발용 실행
 

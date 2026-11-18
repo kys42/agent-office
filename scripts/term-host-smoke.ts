@@ -17,7 +17,7 @@ import { restoreSequence } from '../desktop/term-host/protocol';
 
 const sessions = Number(process.env.TERM_HOST_SESSIONS ?? 20);
 const cols = Number(process.env.TERM_HOST_COLS ?? 200);
-const scrollback = Number(process.env.TERM_HOST_SCROLLBACK ?? 1000);
+const scrollback = Number(process.env.TERM_HOST_SCROLLBACK ?? 200);
 const electron = process.env.TERM_HOST_ELECTRON;
 const entry = process.env.TERM_HOST_ENTRY ?? path.resolve('dist-desktop/term-host.cjs');
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
