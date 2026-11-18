@@ -376,6 +376,42 @@ test('Back from tiny, a bubble unfolded before does not reopen', async ({ page }
   await expect.poll(() => calls(page)).toContain('pet');
 });
 
+test('Tiny keeps the office stripe on remote names only and conceals it in privacy mode', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row&tiny');
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.sessions[1].remote = {
+      officeId: 'peer-1',
+      label: 'Mac mini',
+      color: 'lilac',
+      tags: [],
+      sessionId: 'test',
+      receivedAt: Date.now(),
+      stale: false,
+      conversation: true,
+      send: false,
+    };
+    w.publish();
+  });
+  const chip = page.locator('[data-station-id="run-1"] .tiny-name');
+  await expect(chip).toHaveAttribute('title', '동료 1 · Mac mini');
+  await expect(chip).toHaveText('동료 1');
+  await expect(chip.locator('span')).toHaveCSS('border-inline-start-color', 'rgb(198, 166, 245)');
+  await expect(page.locator('[data-station-id="run-0"] .tiny-name > span')).toHaveCSS(
+    'border-inline-start-width',
+    '0px',
+  );
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.preferences.privacy = true;
+    w.publish();
+  });
+  await expect(chip).not.toHaveAttribute('title', /Mac mini/);
+  await expect(chip.locator('span')).toHaveCSS('border-inline-start-width', '0px');
+});
+
 test('Tiny desks carry a small readable name that opens the card', async ({ page }) => {
   await setup(page, '#mini=row&tiny');
   await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);

@@ -4,7 +4,7 @@ import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { FederationState, PeerInput } from '../../src/shared/federation.js';
-import { parseRemoteId, remoteId } from '../../src/shared/federation.js';
+import { OFFICE_COLORS, parseRemoteId, remoteId } from '../../src/shared/federation.js';
 import type { Session, SessionDetail, TerminalTarget, SendResult } from '../../src/shared/types.js';
 import {
   peerSchema,
@@ -27,7 +27,17 @@ const hostSchema = z
   .string()
   .regex(/^(?:remote-control|ssh):[A-Za-z0-9._:-]{1,240}$/)
   .optional();
-const localPeerSchema = peerSchema.extend({ codexHostId: hostSchema });
+const colorSchema = z.enum(OFFICE_COLORS).optional();
+const localPeerSchema = peerSchema.extend({ codexHostId: hostSchema, color: colorSchema });
+// Assign distinct defaults to old connection files without asking for a migration.
+function assignColors(peers: PeerInput[]) {
+  const used = new Set(peers.map((p) => p.color));
+  for (const p of peers)
+    if (!p.color) {
+      p.color = OFFICE_COLORS.find((color) => !used.has(color)) ?? OFFICE_COLORS[0];
+      used.add(p.color);
+    }
+}
 const configSchema = z
   .object({ enabled: z.boolean(), peers: z.array(localPeerSchema).max(5) })
   .strict();
@@ -43,7 +53,7 @@ const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('add'), peer: peerSchema }).strict(),
   peerSchema
     .pick({ officeId: true, label: true, tags: true, projects: true })
-    .extend({ action: z.literal('update'), codexHostId: hostSchema })
+    .extend({ action: z.literal('update'), codexHostId: hostSchema, color: colorSchema })
     .strict(),
   z.object({ action: z.literal('remove'), officeId: z.uuid() }).strict(),
 ]);
@@ -115,7 +125,7 @@ export function importSession(
     events: s.events.map((e) => ({ ...e, id: id(e.id), sourceRef: '' })),
     usage: s.usage,
     artifacts: [],
-    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.label, peer.tags, peer.projects, !!peer.sendToken]))}`,
+    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.color, peer.label, peer.tags, peer.projects, !!peer.sendToken]))}`,
     zone: s.zone,
     officeSeat: s.officeSeat,
     area: {
@@ -127,6 +137,7 @@ export function importSession(
       match: 'session',
     },
     remote: {
+      color: peer.color,
       officeId: peer.officeId,
       sessionId: s.id,
       label: peer.label,
@@ -163,6 +174,7 @@ export class PeerManager extends EventEmitter {
       );
       if (new Set(this.config.peers.map((p) => p.officeId)).size !== this.config.peers.length)
         throw new Error('duplicate');
+      assignColors(this.config.peers);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT')
         this.configError = 'Invalid beta peer configuration; connections disabled';
@@ -226,6 +238,7 @@ export class PeerManager extends EventEmitter {
               label: command.label,
               tags: command.tags,
               projects: command.projects,
+              color: command.color ?? p.color,
               codexHostId: command.codexHostId,
             }
           : p,
@@ -234,15 +247,26 @@ export class PeerManager extends EventEmitter {
       if (!next.enabled) throw new Error('Enable the beta before adding a peer');
       next.peers = [
         ...next.peers.filter((p) => p.officeId !== command.peer.officeId),
-        command.peer,
+        {
+          ...command.peer,
+          color: next.peers.find((p) => p.officeId === command.peer.officeId)?.color,
+        },
       ];
     }
+    assignColors(next.peers);
     configSchema.parse(next);
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const tmp = path.join(this.dir, 'peers.json.tmp');
     writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
     renameSync(tmp, path.join(this.dir, 'peers.json'));
-    this.cancel();
+    // Display edits can reuse live snapshots. Only a routing/config change invalidates requests.
+    const previous =
+      command.action === 'update'
+        ? this.config.peers.find((p) => p.officeId === command.officeId)
+        : undefined;
+    const displayOnly =
+      command.action === 'update' && previous && previous.codexHostId === command.codexHostId;
+    if (!displayOnly) this.cancel();
     this.config = next;
     this.configError = null;
     this.emit('change');
