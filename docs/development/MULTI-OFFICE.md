@@ -16,10 +16,11 @@ flowchart LR
 
 - `server/federation/`이 별도 API·프로토콜·클라이언트·합성 계층이다. 기존 `/api/rpc`, MCP, `OfficeService` 저장 흐름은 그대로다. 조회 API는 GET `/office/v1/snapshot`, `/office/v1/detail`이다. 별도 command token을 요구하는 POST `/office/v1/commands/targets`, `/office/v1/commands/send`를 추가한다.
 - 송신기는 기존 SQLite를 readOnly로 열며 수집기, migration, seat 할당, 사용자 설정 쓰기를 실행하지 않는다. 기존 Office가 수집한 가시 세션과 명시한 프로젝트 범위의 교집합만 제공한다.
-- 수신기는 원격 내용을 기존 SQLite에 쓰지 않는다. `federation-beta/peers.json`에 연결 설정만 저장한다. 원격 스냅샷·상세는 메모리에만 있고 앱 종료 시 사라진다. 베타를 끄면 요청/타이머/캐시를 폐기하고 기존 로컬 스냅샷으로 복귀한다. 송신 프로세스는 별도로 중지해야 한다.
+- 수신기는 원격 내용을 기존 SQLite에 쓰지 않는다. `federation-beta/peers.json`에 연결 설정을, 같은 폴더의 `hidden.json`에는 이 뷰어의 원격 가림 시각(격리된 세션 ID→시각)만 저장한다. 가리기/되돌리기는 peer 요청 없이 모든 창에 반영되고 재시작에도 유지된다. 새 대화·부르는 동료의 공통 복귀 규칙을 따른다. 원격 스냅샷·상세는 메모리에만 있고 앱 종료 시 사라진다. 베타를 끄면 요청/타이머/캐시를 폐기하고 기존 로컬 스냅샷으로 복귀한다. 송신 프로세스는 별도로 중지해야 한다.
 - `officeId + 원격 ID의 SHA-256`으로 세션·부모·배우·이벤트·workspace ID를 격리한다. 다른 컴퓨터의 같은 원본 ID도 충돌하지 않는다. 원격 절대 경로·별명·메모·개인 핀·읽음 상태·공급자 인증 정보는 DTO에서 제외한다. **제목, 프로젝트, 활동 발췌, 대화 본문에는 사용자가 쓴 경로나 민감한 글이 포함될 수 있다. 본문 익명화 기능은 아니다.**
 - 사이드바에서 컴퓨터별 사무실을 전환한다. 각 사무실은 프로젝트 구역, 사무실/대기/보관 공간과 집계를 따로 가진다. 연결의 이름·태그로 컴퓨터를 구분한다. 프로젝트 대응표 `원격 프로젝트 = 표시 그룹`은 해당 원격 사무실 안에서만 묶는다. 로컬 구역/규칙/DB는 변경하지 않는다. 개인정보 숨김은 컴퓨터 이름·태그도 가린다.
-- 조회 전용 연결에는 채팅 입력창이 없다. 별도 채팅 권한 연결만 기존 실행 중 에이전트에 메시지를 보낸다. 원격 터미널 이동·resume·answer·notes·pin·가리기·북마크·인수인계는 지원하지 않는다. 렌더러에서 버튼을 숨기는 것과 별도로 IPC/service에서도 remote ID를 거절한다. 로컬 전문 검색·소식·MCP에는 원격 기록이 포함되지 않는다.
+- 조회 전용 연결에는 채팅 입력창이 없다. 별도 채팅 권한 연결만 기존 실행 중 에이전트에 메시지를 보낸다. 원격 터미널 이동·resume·answer·notes·pin·북마크·인수인계는 지원하지 않는다. 렌더러에서 버튼을 숨기는 것과 별도로 IPC/service에서도 해당 원격 쓰기를 거절한다. 가리기는 원격 변경이 아닌 수신 뷰어의 표시 설정이며 현재 가시 ID·최대500개·서비스 시각을 검증한다. 로컬 전문 검색·소식·MCP에는 원격 기록이 포함되지 않는다.
+- 원격에 로컬 읽음 소식을 생성하지 않는다. 대신 가린 동료의 공개 이벤트에 공통 `noticeCandidates`/`isVeiled` 규칙을 적용해 다음 대화를 관측하면 가림 marker를 지운다. 요청 직후 진행이 함께 수집되거나 이후 bounded 이벤트가 사라져도 다시 가리지 않는다. 혼합 요청은 알려진 원격 상태 오류를 로컬 변경 전에 검사한다. 로컬 DB와 별도 표시 파일의 저장은 하나의 트랜잭션은 아니므로 이후 I/O 실패는 오류로 알린다. 원격 가림 시각은 마지막 응답의 `sampledAt`으로 원격 시계에 맞추고, 이 뷰어에 이미 보여 준 이벤트·활동 시각보다 앞서지 않게 저장해서, 두 컴퓨터의 시계가 어긋나도 원격 이벤트 시각과 같은 기준으로 비교한다. 알려진 한계: 목록 스냅샷은 세션마다 최근 4개 이벤트와 최신 활동만 싣는다. 폴링 사이(평소 5초, 실패가 이어지면 최대 60초)에 새 요청 뒤로 진행 이벤트가 4개 넘게 쌓이면 그 요청은 관측되지 않고, 최종 답변·질문·오류가 창 안에 보일 때 다시 나타난다. 스냅샷에 지속 신호(예: 마지막 대화 시각)를 더하려면 `sessionSchema`가 strict라 구버전 수신기가 스냅샷 전체를 거절하므로 프로토콜 버전 협상과 함께 후속으로 다룬다.
 
 ## 로컬 전용 사용과 호환성
 
@@ -138,3 +139,9 @@ command smoke는 가짜 native sender를 주입한 합성 HTTPS 서버와 실제
 검수는 사용자 Mac에서 quiet 기본값을 유지한다. 실패 원인 조사 중에도 `AGENT_OFFICE_FOCUS_TESTS=1` 또는 `CI=1`로 전경 테스트를 켜지 않는다. 실제 OS 포커스 검사는 전용 CI나 별도 합의한 환경에서만 한다.
 
 Codex의 owner 없음 응답은 요청의 짧은 제한과 별개로 약 10초 뒤 도착할 수 있다. 수신 relay는 정확한 hostId와 conversationId를 담은 version 2 follower settings 조회로 원격 owner를 찾는다. 일부 Codex 클라이언트는 owner-discovery를 local에만 등록하므로 이 요청을 원격 전송의 선행 조건으로 삼지 않는다. 첫 설정 조회는 11초를 기다리고, 반환된 handledByClientId를 지정해 같은 연결에서 설정을 다시 검증한다. 두 응답 모두 resumed/default/user여야 하며 initialize와 지정된 owner의 설정 재검증은 2초로 제한한다. 명시적인 `no-client-found`만 연결 준비로 분류하고 timeout은 준비 불가로 처리한다. 여러 사무실의 대상 조회는 20개씩 최대 5개 배치를 병렬 실행해 느린 owner discovery가 뒤의 사무실을 직렬로 막지 않는다. 설정 변경·종료 시 대기 중 배치를 시작하지 않고 이전 결과도 폐기한다.
+
+### Resuming an existing remote Codex chat
+
+On an unavailable Codex card, **Resume remotely** asks the exporting office which hosts can reopen that chat. Both peers must support resume, with remote send and launch enabled. The exporter matches the shared session to its saved rollout ID. Desktop chats open in the exporter's Codex app. CLI chats resume in the original working directory through managed tmux or a registered Orca workspace after the duplicate checks pass.
+
+Starting requires selecting a host and confirming the native dialog. The draft stays in the card. The exporter reports readiness only after finding the same chat's Desktop owner or CLI queue. If that check times out, refresh the card's send target after the app finishes opening.

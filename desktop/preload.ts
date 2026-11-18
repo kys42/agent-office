@@ -26,6 +26,7 @@ const api: OfficeAPI = {
   openLink: (url) => action('office:open-link', url),
   openFile: (path) => action('office:open-file', path),
   copyText: (text) => action('office:copy', text),
+  startupRelease: () => ipcRenderer.invoke('office:startup-release'),
   refresh: () => call('refresh'),
   patch: (id, p) => call('patch', id, p),
   veil: (ids, on) => call('veil', ids, on),

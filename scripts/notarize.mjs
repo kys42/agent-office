@@ -27,6 +27,76 @@ export function notaryCredentials(env = process.env) {
   );
 }
 
+const CREDENTIAL_FLAGS =
+  /(--(?:key|key-id|issuer|keychain-profile|keychain|apple-id|password|team-id)|-p)(=|\s+)("[^"]*"|'[^']*'|\S+)/g;
+
+/**
+ * notarytool's own words help with failures we do not recognise, but they can echo the
+ * request. Keep the message, never the credentials: drop configured secret values, anything
+ * after a credential flag, absolute paths and UUID-shaped ids, then bound the length.
+ */
+export function sanitizeNotaryDiagnostic(text, env = process.env) {
+  let out = String(text ?? '')
+    .replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ');
+  const secrets = [
+    env.APPLE_API_KEY_PATH,
+    env.APPLE_API_KEY_PATH && path.basename(env.APPLE_API_KEY_PATH),
+    env.APPLE_API_KEY,
+    env.APPLE_API_ISSUER,
+    env.AGENT_OFFICE_NOTARY_PROFILE,
+    env.AGENT_OFFICE_SIGN_KEYCHAIN,
+    env.AGENT_OFFICE_TEAM_ID,
+    env.AGENT_OFFICE_SIGN_IDENTITY,
+    env.AGENT_OFFICE_APPLE_PROFILE,
+  ]
+    .filter((value) => typeof value === 'string' && value.trim().length >= 3)
+    .sort((a, b) => b.length - a.length);
+  for (const secret of secrets) out = out.split(secret).join('[redacted]');
+  out = out
+    .replace(CREDENTIAL_FLAGS, '$1 [redacted]')
+    .replace(/(?:~|\/(?:Users|home|private|var|tmp|Volumes|opt))\/[^\s'",;)]*/g, '[path]')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '[id]')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return out.length > 500 ? `${out.slice(0, 500)}…` : out;
+}
+
+/** Read-only release probe. Never expose execFile's credential argv in a thrown error. */
+export function verifyNotaryAccess(env = process.env, run = execFileSync) {
+  const credentials = notaryCredentials(env);
+  try {
+    run('xcrun', ['notarytool', 'history', ...credentials, '--output-format', 'json'], {
+      env,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30000,
+      maxBuffer: 1024 * 1024,
+    });
+  } catch (error) {
+    const diagnostic = String(error.stderr ?? '');
+    if (/403/.test(diagnostic) && /agreement/i.test(diagnostic))
+      throw new Error(
+        'Apple notarization is blocked by a required or expired agreement (403). The account owner must check Apple Developer / App Store Connect Agreements for the signing team, then rerun preflight. No artifact was submitted.',
+      );
+    if (/401/.test(diagnostic))
+      throw new Error(
+        'Apple notarization authentication failed (401). Check the configured team API key or keychain profile, then rerun preflight. No artifact was submitted.',
+      );
+    if (error.code === 'ETIMEDOUT')
+      throw new Error(
+        'Apple notarization preflight timed out. Check the network and retry. No artifact was submitted.',
+      );
+    // Unrecognised: show what notarytool said (sanitised), or at least the spawn error code.
+    const detail =
+      sanitizeNotaryDiagnostic(diagnostic || error.stdout, env) ||
+      (typeof error.code === 'string' && /^[A-Z][A-Z0-9_]*$/.test(error.code) ? error.code : '');
+    throw new Error(
+      `Apple notarization preflight failed${detail ? ` (notarytool: ${detail})` : ''}. Check network access, Xcode command-line tools and the configured signing profile. No artifact was submitted.`,
+    );
+  }
+}
+
 const receiptDirectory = () => path.resolve('.local/notary');
 const artifactKey = (artifact) => {
   const resolved = path.join(

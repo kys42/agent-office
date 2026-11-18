@@ -4,6 +4,8 @@ import { appendFile, mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/pro
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { focusTests, quietEnv, takeFocus } from './quiet-smoke.mjs';
 const temp = await mkdtemp(path.join(os.tmpdir(), 'agent-office-native-'));
 const now = new Date().toISOString();
@@ -506,7 +508,44 @@ try {
   // 보기 opens on hover. The window grows under the pointer: the page re-judges hover at the
   // pointer's old spot (now off the button), yet the menu stays — the pointer never moved.
   const viewMenu = dock.getByRole('menu', { name: '데스크 보기' });
-  await rowPill.getByRole('button', { name: '보기 바꾸기', exact: true }).hover();
+  // On Windows a native resize replays the actual OS cursor. CDP's synthetic .hover()
+  // does not move that cursor: it used to look like a departure as soon as the menu grew.
+  // Move the real pointer on the isolated CI desktop, including DPI conversion.
+  const moveDockPointer = async (x, y) => {
+    if (process.platform !== 'win32' || !focusTests) return dock.mouse.move(x, y);
+    const point = await app.evaluate(
+      ({ BrowserWindow, screen }, { x, y }) => {
+        const w = BrowserWindow.getAllWindows().find((w) =>
+          w.webContents.getURL().includes('#mini'),
+        );
+        const b = w.getContentBounds();
+        return screen.dipToScreenPoint({ x: Math.round(b.x + x), y: Math.round(b.y + y) });
+      },
+      { x, y },
+    );
+    await promisify(execFile)(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class OfficeCursor { [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); }'; if (-not [OfficeCursor]::SetCursorPos(${point.x}, ${point.y})) { exit 1 }`,
+      ],
+      { timeout: 10000 },
+    );
+    // CDP delivers the renderer event even when the transparent native window forwards
+    // mouse input. The OS cursor now agrees, so a resize cannot replay a different position.
+    await dock.mouse.move(x, y);
+  };
+  await dock.waitForFunction((height) => window.innerHeight === height, row.height);
+  const viewButtonBox = await rowPill
+    .getByRole('button', { name: '보기 바꾸기', exact: true })
+    .boundingBox();
+  assert.ok(viewButtonBox);
+  await moveDockPointer(
+    viewButtonBox.x + viewButtonBox.width / 2,
+    viewButtonBox.y + viewButtonBox.height / 2,
+  );
   await viewMenu.waitFor();
   for (let i = 0; i < 40 && (await dockBounds()).height === row.height; i++)
     await dock.waitForTimeout(50);
@@ -514,7 +553,7 @@ try {
   await dock.waitForTimeout(700);
   assert.ok(await viewMenu.isVisible(), 'a still pointer keeps the hover-opened menu');
   // Leaving it for the see-through top closes it after a short grace, and gives the room back.
-  await dock.mouse.move(12, 12);
+  await moveDockPointer(12, 12);
   await viewMenu.waitFor({ state: 'detached' });
   await backTo(row.height, 'the room goes back as the hover menu closes');
   // 👁 잠깐 숨기기: the desks step aside (click-through), the pill stays; then they come back.

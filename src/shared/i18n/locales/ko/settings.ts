@@ -227,6 +227,12 @@ export const settings: Messages['settings'] = {
   tmuxSkip: '권한 확인 없이 터미널에 띄우기',
   tmuxSkipHint:
     '세션 시작 창에서 새 세션·이어가기·복제를 띄울 때(Orca·tmux·터미널 앱·명령 복사) Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',
+  updates: {
+    title: '업데이트',
+    startupCheck: '시작할 때 새 버전 확인',
+    startupCheckHint:
+      '설치한 앱을 열 때 GitHub에 새 정식 버전이 나왔는지 한 번 물어봐요. 사무실 정보는 보내지 않고, 끄면 아무 요청도 하지 않아요.',
+  },
   notifications: {
     title: '알림',
     finals: '최종 응답',

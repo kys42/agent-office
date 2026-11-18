@@ -2,6 +2,9 @@
 
 개발용 **preview**와 **Developer ID 서명·Apple 공증** 경로를 분리한다. `package:dmg`는 서명·공증 경로이며, preview는 `package:preview` / `package:dmg:preview`로만 명시해서 실행한다. 내부 `package` 명령은 서명 모드가 없으면 실패한다. 서명/공증 실패 시 preview로 대체하지 않는다. 빌드는 사용자 세션이나 인증 파일을 포함하지 않는다. 자동 업데이트와 공개 게시는 별도 작업이다.
 
+설치 앱은 사무실을 열 때 프로세스당 한 번 GitHub의 최신 정식 릴리스를 조회한다. `package.json` 버전을 올려 빌드하고 해당 설치 파일을 붙인 GitHub Release(태그 예: `v0.2.0`)를 정식으로 게시해야 이전 버전에 안내가 뜬다. 커밋·CI 산출물·초안·프리릴리스는 알림 대상이 아니다. 알림은 공식 릴리스 페이지를 열며 앱을 다운로드하거나 교체하지 않는다. ‘이 버전 건너뛰기’는 해당 기기의 프로필에 버전별로 기억한다. 이 기능이 없는 기존 설치본은 한 차례 수동 업데이트해야 한다. 설정 › 일반 › 업데이트의 ‘시작할 때 새 버전 확인’(기본 켬)을 끄면 조회 요청 자체를 보내지 않는다. 메인 프로세스가 수집기 환경설정을 먼저 읽고(아직 모르면 끈 것으로 취급) 그 뒤에만 요청한다.
+
+
 ## 로컬 생성과 설치
 
 앱 아이콘 원본은 `public/icon.png`(투명 배경의 1024px PNG)다. 선택한 맥북 앞 미니 로봇 시안으로 교체했으며, 브라우저 favicon과 실행 중 Mac Dock도 같은 파일을 사용한다. 메뉴바의 흑백 template 심벌은 메뉴바용으로 유지한다. PNG를 변경하면 macOS에서 `npm run icon:mac`으로 16–1024px ICNS를 재생성해 `public/icon.icns`와 함께 커밋한다. 패키징은 커밋된 ICNS를 사용하며 Linux CI에서 Mac 변환 도구를 실행하지 않는다.
@@ -94,7 +97,7 @@ CI timeout은 hosted runner가 사라지므로 로컬 재개와 다르다. 실�
 
 ### 다른 서버와 GitHub Actions
 
-[macOS Signed Release](../../.github/workflows/macos-signed.yml)는 main에 포함된 커밋의 수동 실행 또는 버전 태그로 실행한다. Linux에서 품질 검사를 하고, macOS arm64/x64 runner에서 최종 서명·공증·실행을 검사한다. Linux/Windows 서버는 소스 검증과 빌드 요청을 맡을 수 있지만 이 경로의 최종 Mac 패키징은 macOS/Xcode Command Line Tools가 필요하다. 일반 PR에는 서명 비밀값을 제공하지 않는다.
+[macOS Signed Release](../../.github/workflows/macos-signed.yml)는 main에 포함된 커밋의 수동 실행 또는 버전 태그로 실행한다. Linux에서 런타임 의존성의 high 이상 감사(`npm audit --omit=dev`, 개발 도구 전용 경고는 제외)·형식·단위·빌드·MCP·UI 검사를 통과한 뒤, macOS arm64/x64 runner에서 최종 서명·공증·실행을 검사한다. Linux/Windows 서버는 소스 검증과 빌드 요청을 맡을 수 있지만 이 경로의 최종 Mac 패키징은 macOS/Xcode Command Line Tools가 필요하다. 일반 PR에는 서명 비밀값을 제공하지 않는다.
 
 GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜치를 main, 허용 태그를 릴리스용 `v*`로 제한한다. 저장소 정책에 맞는 reviewer 보호도 적용한다. 코드 안의 ancestry 검사만으로 악의적인 workflow 변경을 막을 수 없으므로 environment 제한을 생략하지 않는다. 병합 전에 임의 feature ref로 secret job을 실행하지 않는다.
 
@@ -114,6 +117,10 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜�
 
 공증 프로필은 `xcrun notarytool store-credentials agent-office`의 대화형 입력 또는 승인된 API 키 파일로 등록한다. Apple ID 방식은 앱 전용 암호를 사용한다. CI는 위 팀 API 키 방식으로 통일한다. 개인 API 키(issuer 없는 방식)는 현재 CI 스크립트 범위 밖이다.
 
+### 공증 사전 점검 실패
+
+`release:mac -- preflight`는 업로드 없이 Apple history API 접근을 30초 안에 확인한다. 403 계약 오류는 소유자가 **해당 서명 팀**의 Apple Developer / App Store Connect Agreements를 확인한 뒤 재실행한다. 이미 동의했다면 다른 팀의 계약을 본 것은 아닌지 확인한다. 401은 팀 API 키 또는 keychain profile을 확인한다. 네트워크 timeout은 연결을 복구한 뒤 같은 preflight를 다시 실행한다. 이 단계 실패에는 제출 ID가 없으므로 resume이나 무조건 재제출로 해결하지 않는다. 분류되지 않은 실패는 notarytool의 stderr를 정리해 `(notarytool: …)`로 함께 보여 준다. 이때 설정된 키 경로·키 ID·issuer·프로필 이름, 인증 플래그 뒤의 값, 절대 경로, UUID는 지우고 500자로 자른다. 실패 로그에 원래 인증 인자와 개인 키 경로를 복사하지 않는다.
+
 ### 유지보수와 복구
 
 - 인증서/Apple Developer 멤버십 만료 전에 갱신하고 새 P12로 실제 서명·공증·설치를 검증한다. 기존 인증서가 단순 갱신 대상이라면 즉시 revoke하지 않는다. 이미 배포한 앱의 타임스탬프와 권한 연속성도 확인한다.
@@ -132,7 +139,7 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜�
 4. macOS의 파일 및 폴더, 로컬 네트워크, 터미널 조작 권한은 쓰는 기능에 맞게 사용자가 허용한다. 앱에서 해당 시스템 설정만 열어 주며 권한 승인 여부를 추측해서 녹색 체크로 표시하지 않는다. 전체 디스크 접근을 모든 사용자에게 일괄 요구하거나 TCC DB를 수정하지 않는다.
 5. 동일 신원에서 계속 발생하면 UUID와 helper 서명, macOS 버전, 실제 차단 기능을 함께 조사한다. 권한 DB 초기화를 첫 해결책으로 사용하지 않는다.
 
-이 작업의 원인 후보: main은 임시 서명만 포함하고 정식 서명 PR235는 아직 별도였으며, 이 Mac은 그 PR을 통합한 별도 설치본을 사용했다. 다른 기기의 실제 설치본을 검사하기 전까지 동일 원인이라고 확정하지 않는다.
+2026-10-29 조사 당시 main은 임시 서명만 포함하고 정식 서명 PR235는 별도였다. 이는 과거 원인 후보 기록이며 현재 main의 서명 기능 부재를 뜻하지 않는다. 업데이트 후 반복 권한 문제는 해당 기기의 실제 설치본 신원과 빌드 출처를 위 절차로 확인한다.
 
 ## 로컬 네트워크 권한과 Electron UUID
 

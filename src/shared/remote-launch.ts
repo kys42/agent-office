@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
-export const launchSpecSchema = z
+const summonSpecSchema = z
   .object({
+    resume: z.never().optional(),
     provider: z.enum(['claude', 'codex']),
     host: z.enum(['tmux', 'orca']),
     name: z
@@ -17,6 +18,17 @@ export const launchSpecSchema = z
       .default(''),
   })
   .strict();
+export type RemoteSummonSpec = z.infer<typeof summonSpecSchema>;
+export const launchSpecSchema = z.union([
+  summonSpecSchema,
+  z
+    .object({
+      resume: z.literal(true),
+      provider: z.literal('codex'),
+      host: z.enum(['desktop', 'tmux', 'orca']),
+    })
+    .strict(),
+]);
 export type RemoteLaunchSpec = z.infer<typeof launchSpecSchema>;
 export const launchInfoSchema = z
   .object({
@@ -25,7 +37,9 @@ export const launchInfoSchema = z
     plan: z.string().regex(/^[a-f0-9]{64}$/),
     project: z.string().max(4000),
     cwd: z.string().max(4000),
-    hosts: z.object({ tmux: z.boolean(), orca: z.boolean() }).strict(),
+    hosts: z
+      .object({ tmux: z.boolean(), orca: z.boolean(), desktop: z.boolean().optional() })
+      .strict(),
     status: z.enum(['ready', 'started', 'running', 'uncertain', 'cancelled']),
     requestId: z.uuid().optional(),
   })
