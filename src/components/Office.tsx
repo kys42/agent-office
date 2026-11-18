@@ -49,6 +49,7 @@ import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
+import { officeLabel } from '../shared/rooms';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
 import { walksIn } from '../lib/commute';
 import { joyClass, usePetReactions } from '../lib/petReaction';
@@ -86,10 +87,12 @@ export function Office({
   quotaOf,
   helperStackAt = HELPER_STACK_AT,
   demo = false,
+  showOffice = false,
   bringBack,
   show = DEFAULT_DESK_VIEW,
   preview = false,
 }: {
+  showOffice?: boolean;
   /** What the person chose to see on the desks (#324). Missing: the look from before. */
   show?: DeskView;
   /**
@@ -442,7 +445,12 @@ export function Office({
             <i className="wall-plant plant-left" aria-hidden="true" />
             <i className="wall-plant plant-right" aria-hidden="true" />
             {layout.projects.map((area, index) => {
-              const areaName = privacy ? t.desk.project : area.name;
+              const source = byId.get(area.stations[0]?.id);
+              const areaName = privacy
+                ? t.desk.project
+                : showOffice && source
+                  ? `${officeLabel(source)} · ${area.name}`
+                  : area.name;
               const veilIds = zoneVeilIds?.(area.stations.map((s) => s.id)) ?? [];
               return (
                 <div
@@ -452,8 +460,15 @@ export function Office({
                   data-zone-index={index}
                   onDragOver={(e) => {
                     if (!dragging) return;
-                    e.preventDefault();
                     e.stopPropagation();
+                    // The combined room shows remote projects, but only local ones accept desks.
+                    if (source?.remote) {
+                      e.dataTransfer.dropEffect = 'none';
+                      setDropKey(undefined);
+                      setInsert(null);
+                      return;
+                    }
+                    e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
                     setDropKey(area.key);
                     setInsert(null);
@@ -462,6 +477,10 @@ export function Office({
                     if (!dragging) return;
                     e.preventDefault();
                     e.stopPropagation();
+                    if (source?.remote) {
+                      endDrag();
+                      return;
+                    }
                     drop(area.key);
                   }}
                   style={
@@ -491,8 +510,8 @@ export function Office({
                         privacy
                           ? ''
                           : area.custom
-                            ? `${area.name} · ${t.desk.customZone(area.custom.join(', '))}\n`
-                            : `${area.name}\n`
+                            ? `${areaName} · ${t.desk.customZone(area.custom.join(', '))}\n`
+                            : `${areaName}\n`
                       }${t.office.zoom.zoneTitle}`}
                       onClick={() => focusZone(area.key)}
                     >

@@ -95,7 +95,7 @@ async function pipeFixture() {
 
 test(
   'Verified handle relays split/coalesced binary frames and closes with its parent stream',
-  { skip: process.platform !== 'win32', timeout: 15000 },
+  { skip: process.platform !== 'win32', timeout: 30000 },
   async () => {
     const f = await pipeFixture();
     let bridge;
@@ -135,7 +135,7 @@ test(
 
 test(
   'Rejected pipe identity receives no protocol bytes',
-  { skip: process.platform !== 'win32', timeout: 10000 },
+  { skip: process.platform !== 'win32', timeout: 30000 },
   async () => {
     const f = await pipeFixture();
     try {

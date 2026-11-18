@@ -7,6 +7,7 @@ import { ago } from '../lib/format';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { useI18n } from '../lib/i18n';
+import { officeLabel } from '../shared/rooms';
 
 export function RestLounge({
   sessions,
@@ -14,7 +15,9 @@ export function RestLounge({
   reducedMotion,
   onSelect,
   onReturn,
+  showOffice = false,
 }: {
+  showOffice?: boolean;
   sessions: Session[];
   privacy: boolean;
   reducedMotion: boolean;
@@ -46,7 +49,11 @@ export function RestLounge({
           >
             <div className="lounge-project">
               <i />
-              {privacy ? t.lounge.project : zoneLabel(group[0])}
+              {privacy
+                ? t.lounge.project
+                : showOffice
+                  ? `${officeLabel(group[0])} · ${zoneLabel(group[0])}`
+                  : zoneLabel(group[0])}
               <small>{t.lounge.offDuty(group.length)}</small>
             </div>
             <div className="lounge-pods">

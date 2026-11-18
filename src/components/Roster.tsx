@@ -20,6 +20,7 @@ import { isWorking } from '../shared/presentation';
 import { isAttentionNotice } from '../shared/notices';
 import { useI18n } from '../lib/i18n';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
+import { officeLabel } from '../shared/rooms';
 function saved(key: string) {
   try {
     return localStorage.getItem(key) === '1';
@@ -46,7 +47,9 @@ export function Roster({
   filter,
   onFilter,
   scope,
+  showOffice = false,
 }: {
+  showOffice?: boolean;
   zone: OfficeZone;
   sessions: Session[];
   totalSessions: Session[];
@@ -301,11 +304,11 @@ export function Roster({
                           </strong>
                           <span className="session-meta">
                             {privacy ? t.roster.hidden : zoneLabel(s)}
-                            {s.remote && (
+                            {(s.remote || showOffice) && (
                               <>
                                 {' '}
-                                · {privacy ? t.federation.readOnly : s.remote.label}
-                                {s.remote.stale ? ` · ${t.federation.offline}` : ''}
+                                · {officeLabel(s, privacy)}
+                                {s.remote?.stale ? ` · ${t.federation.offline}` : ''}
                               </>
                             )}
                             <i>·</i>
