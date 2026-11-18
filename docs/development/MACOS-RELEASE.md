@@ -38,7 +38,7 @@ shasum -a 256 -c SHA256SUMS-arm64.txt
 
 - 일반 push/PR: 기존 Linux `Verify`가 format·unit·build·MCP·UI를 검사한다. macOS 패키징은 실행하지 않는다.
 - 수동 실행: Actions에서 `macOS DMG Preview` → Run workflow → 검증할 ref와 `arm64`, `x64`, `both`를 선택한다.
-- 버전 태그는 아래 **macOS Signed Release**에서 처리한다. preview는 수동 실행만 지원한다.
+- preview와 아래 **macOS Signed Release** 모두 수동 실행한다. 태그 생성만으로 서명을 시작하지 않는다.
 - 두 경로 모두 Linux 품질 검사에 성공한 뒤 macOS job을 실행한다. arm64는 `macos-15`, x64는 `macos-15-intel`을 사용한다.
 - 각 job은 최종 DMG를 mount → 앱을 임시 설치 경로로 복사 → 서명 검증 → 설치본 Electron 실행을 마친 뒤 DMG·JSON·체크섬을 30일 보관 artifact로 올린다.
 
@@ -97,9 +97,23 @@ CI timeout은 hosted runner가 사라지므로 로컬 재개와 다르다. 실�
 
 ### 다른 서버와 GitHub Actions
 
-[macOS Signed Release](../../.github/workflows/macos-signed.yml)는 main에 포함된 커밋의 수동 실행 또는 버전 태그로 실행한다. Linux에서 런타임 의존성의 high 이상 감사(`npm audit --omit=dev`, 개발 도구 전용 경고는 제외)·형식·단위·빌드·MCP·UI 검사를 통과한 뒤, macOS arm64/x64 runner에서 최종 서명·공증·실행을 검사한다. Linux/Windows 서버는 소스 검증과 빌드 요청을 맡을 수 있지만 이 경로의 최종 Mac 패키징은 macOS/Xcode Command Line Tools가 필요하다. 일반 PR에는 서명 비밀값을 제공하지 않는다.
+[macOS Signed Release](../../.github/workflows/macos-signed.yml)는 **소유자 `kys42`가 `main`에서 수동 요청**한다. 최초 실행자의 계정 ID `25008566`과 재실행자 `kys42`를 두 job에서 확인한다. 다른 사람, fork, feature ref, 태그에서는 서명 job을 실행하지 않는다. 요청 SHA가 검증 시작 시점의 최신 main인지 확인하고 두 job 모두 그 SHA를 checkout한다. 검증 중 main이 갱신되더라도 승인 대상은 처음 요청한 SHA다. action은 전체 commit SHA로 고정하고 checkout에 GitHub 토큰을 남기지 않는다.
 
-GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜치를 main, 허용 태그를 릴리스용 `v*`로 제한한다. 저장소 정책에 맞는 reviewer 보호도 적용한다. 코드 안의 ancestry 검사만으로 악의적인 workflow 변경을 막을 수 없으므로 environment 제한을 생략하지 않는다. 병합 전에 임의 feature ref로 secret job을 실행하지 않는다.
+Linux에서 런타임 의존성의 high 이상 감사(`npm audit --omit=dev`, 개발 도구 전용 경고는 제외)·형식·단위·빌드·MCP·UI 검사를 통과한 뒤, **소유자의 environment 승인**을 기다린다. 승인 후 일회용 macOS arm64/x64 runner에서 최종 서명·공증·실행을 검사한다. Linux/Windows 서버도 GitHub에 빌드를 요청하고 결과를 내려받을 수 있다. 개발 기기에 Apple 개인키나 Xcode를 설치할 필요는 없다. 직접 로컬에서 서명하는 경우에는 해당 macOS 빌더에 개인키가 필요하다. 기존 앱의 서명을 새 빌드에 복사할 수는 없다.
+
+GitHub의 **`macos-release` environment를 먼저 생성**하고 다음 보호를 적용한다. 코드 안의 실행자 조건만으로 악의적인 workflow 변경을 막을 수 없으므로 environment 제한을 생략하지 않는다. 병합 전에 feature ref에 secret 접근을 열지 않는다.
+
+| 설정 | 값과 이유 |
+| --- | --- |
+| Required reviewers | `kys42` 한 명. 다른 collaborator를 추가해도 서명 승인자는 자동으로 늘리지 않는다. |
+| Prevent self-review | 끔. 단독 소유자가 직접 요청하고 승인할 수 있어야 한다. 승인 단계 자체는 유지한다. |
+| Allow administrators to bypass | 끔. 실행 중 승인 우회를 허용하지 않는다. |
+| Deployment branches and tags | Selected branches: **branch `main` 하나만**. 태그/와일드카드 없음. |
+| Secrets 위치 | 아래 다섯 개 모두 **environment secrets**. repository/organization 범위로 복제하지 않는다. |
+
+저장소 관리자와 소유자는 정책 자체를 변경할 수 있다. 이 구성은 저장소 소유자 계정 탈취를 방어하거나 같은 계정의 사람과 자동화 도구를 구별하는 별도 인증 장치가 아니다. 다른 서버에는 해당 저장소의 workflow 실행/조회에 필요한 최소 GitHub 권한만 주고 Apple 키는 두지 않는다. AI 에이전트는 빌드를 요청해도 environment 승인을 대신 처리하지 않는다. 승인자는 run의 source SHA와 변경된 workflow·빌드 스크립트·의존성을 확인한다. 공개 저장소의 artifact와 로그는 공개될 수 있으므로 사용자 세션·비밀값은 산출물에 포함하지 않는다.
+
+현재 공개 저장소에서는 required reviewer 보호를 사용할 수 있다. 비공개 전환이나 GitHub 요금제 변경 시 같은 보호가 계속 지원되는지 먼저 확인한다. 지원되지 않는 경우 보호를 없애고 진행하지 말고 서명 경로를 중단한다. [GitHub environment 보호 규칙](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
 
 | 구분 | 이름 | 내용 |
 | --- | --- | --- |
@@ -112,6 +126,25 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜�
 | Environment secret | `APPLE_API_ISSUER_ID` | 해당 팀 issuer ID |
 
 로컬 키체인의 개인키를 자동으로 추출하거나 GitHub에 업로드하지 않는다. 소유자가 허용한 서명 키만 등록한다. P12/키 원문·Apple 계정 비밀번호·프로필 인증값은 Git, Notion, 로그, 산출물에 넣지 않는다. CI는 임시 키체인에 가져오고 `notarytool store-credentials`로 API 키 유효성을 확인하며, 원본 P12/P8과 마지막 키체인을 정리한다. 이 스크립트는 일회용 hosted runner용이다. 기존 키체인을 공유하는 장기 self-hosted 서버에는 그대로 적용하지 않는다.
+
+최초 등록은 **Developer ID Application 인증서와 연결된 개인키 하나만** 암호화 P12로 내보내어 처리한다. 키체인의 모든 개인키, Apple Development/Distribution 인증서까지 한 번에 내보내지 않는다. 공증용 P8은 기존 프로필의 승인된 키를 사용하며 암호·키 원문을 셸 인자나 대화에 붙여넣지 않는다. `gh secret set NAME --repo kys42/agent-office --env macos-release`의 표준입력 또는 GitHub environment UI로 등록한다. P12는 base64로 인코딩하지만 base64 자체는 암호화가 아니다. 임시 P12·암호 파일은 권한 0600, 저장소 밖에 두고 등록 후 제거한다. 갱신도 동일한 다섯 secret 이름을 사용하며 secret 조회 API로 원문을 되읽을 수는 없다.
+
+### 다른 컴퓨터에서 요청하고 받기
+
+워크플로 변경이 main에 반영되고 다섯 secret이 준비된 뒤, `kys42`로 로그인한 GitHub CLI에서:
+
+```bash
+gh workflow run macos-signed.yml --repo kys42/agent-office --ref main -f architecture=arm64
+gh run list --repo kys42/agent-office --workflow macos-signed.yml --limit 5
+gh run view RUN_ID --repo kys42/agent-office --web
+# Linux 검증 후 Review deployments에서 본인이 macos-release 승인
+gh run watch RUN_ID --repo kys42/agent-office --exit-status
+gh run download RUN_ID --repo kys42/agent-office --pattern 'agent-office-signed-*' --dir ./agent-office-release
+```
+
+Intel Mac은 `architecture=x64`, 양쪽은 `both`를 선택한다. 실행 페이지에서 source SHA를 확인하고 성공한 run의 DMG·manifest·SHA256SUMS를 함께 받는다. `notary-recovery` artifact는 실패 복구 전용이며 설치본으로 전달하지 않는다. 다운로드한 아키텍처 폴더에서 `shasum -a 256 -c SHA256SUMS-arm64.txt`(Intel은 x64)로 확인한다. 공개 GitHub Release 게시와 설치 앱 교체는 이 workflow가 수행하지 않는다. 버전 알림을 배포하려면 별도 승인된 Release 절차로 넘어간다.
+
+공증 API가 계약 403을 반환하면 서명 키를 바꾸거나 preview로 우회하지 않는다. 계정 소유자의 계약 확인 후 같은 요청 경로를 재실행한다. 서명 키 등록, CI 빌드 성공, 공증 성공, 설치·OS 권한 검증은 각각 따로 확인한다.
 
 다른 Mac에서 로컬 빌드를 하려면 같은 팀의 유효한 Developer ID 인증서+개인키와 공증 프로필을 별도 안전 경로로 설치하고 위 명령을 실행한다. 별도 키체인은 `AGENT_OFFICE_SIGN_KEYCHAIN`으로 지정한다. 인증서가 있다는 사실만으로 해당 기기에 개인키가 있거나 CI가 준비됐다고 판단하지 않는다.
 

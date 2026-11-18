@@ -9,32 +9,36 @@ on:
         default: arm64
         type: choice
         options: [arm64, x64, both]
-  push:
-    tags: ['v[0-9]*']
 
 permissions:
   contents: read
 
 concurrency:
-  group: macos-signed-${{ github.ref }}
+  group: macos-signed-release
   cancel-in-progress: false
 
 jobs:
   verify:
+    # Environment approval is the credential boundary. These checks also reject other
+    # dispatchers, re-run actors, forks and feature refs before spending runner time.
+    if: >-
+      github.repository == 'kys42/agent-office' &&
+      github.actor_id == '25008566' && github.triggering_actor == 'kys42' &&
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Require a committed main release
-        env:
-          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          persist-credentials: false
+      - name: Require the requested main commit
         run: |
           git fetch --no-tags origin main:refs/remotes/origin/main
-          git merge-base --is-ancestor HEAD origin/main
-          node --input-type=module -e "import fs from 'node:fs'; const tag=process.env.RELEASE_TAG; if(tag && tag !== 'v'+JSON.parse(fs.readFileSync('package.json')).version) throw new Error('Tag must match package version');"
-      - uses: actions/setup-node@v4
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          printf '### Requested source\n`%s`\nApprove only this reviewed commit.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -55,12 +59,16 @@ jobs:
 
   package:
     needs: verify
+    if: >-
+      github.repository == 'kys42/agent-office' &&
+      github.actor_id == '25008566' && github.triggering_actor == 'kys42' &&
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     environment: macos-release
     timeout-minutes: 70
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON((github.event_name == 'push' || inputs.architecture == 'both') && '[{"arch":"arm64","runner":"macos-15"},{"arch":"x64","runner":"macos-15-intel"}]' || inputs.architecture == 'x64' && '[{"arch":"x64","runner":"macos-15-intel"}]' || '[{"arch":"arm64","runner":"macos-15"}]') }}
+        include: ${{ fromJSON(inputs.architecture == 'both' && '[{"arch":"arm64","runner":"macos-15"},{"arch":"x64","runner":"macos-15-intel"}]' || inputs.architecture == 'x64' && '[{"arch":"x64","runner":"macos-15-intel"}]' || '[{"arch":"arm64","runner":"macos-15"}]') }}
     runs-on: ${{ matrix.runner }}
     env:
       AGENT_OFFICE_ARCH: ${{ matrix.arch }}
@@ -68,8 +76,11 @@ jobs:
       AGENT_OFFICE_SIGN_IDENTITY: ${{ vars.MACOS_SIGN_IDENTITY }}
       AGENT_OFFICE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -88,7 +99,7 @@ jobs:
       - name: Verify artifact checksums
         working-directory: release
         run: shasum -a 256 -c "SHA256SUMS-${AGENT_OFFICE_ARCH}.txt"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: agent-office-signed-${{ matrix.arch }}-${{ github.sha }}
           if-no-files-found: error
@@ -103,7 +114,7 @@ jobs:
           if [ -d .local/notary ] && [ -d release ]; then
             tar -czf "$RUNNER_TEMP/agent-office-notary-recovery.tgz" .local/notary release
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: agent-office-notary-recovery-${{ matrix.arch }}-${{ github.sha }}
