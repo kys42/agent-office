@@ -156,6 +156,7 @@ import { CardWindows, type CardMaterial } from './card-windows.js';
 import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 import { present, quiet, quietStart } from './quiet.js';
+import { startupRelease } from './release-update.js';
 import { Notifier } from './notify.js';
 /** Test runs read notifications instead of showing them, even when not quiet (CI). */
 const recordNotifications = process.env.AGENT_OFFICE_RECORD_NOTIFICATIONS === '1';
@@ -1116,6 +1117,18 @@ function setupIPC() {
     trustedReader(e);
     if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
     clipboard.writeText(text);
+  });
+  // Settings › General › Updates (default on). Off: no request leaves the app. Before the first
+  // pushed snapshot the collector is asked, so a launch never checks while the setting is off.
+  const latestRelease = startupRelease(
+    app.getVersion(),
+    async () => (delivery.latest ?? ((await bridge.call('snapshot')) as Snapshot))?.preferences,
+  );
+  ipcMain.handle('office:startup-release', (e) => {
+    trusted(e);
+    if (e.sender !== main?.webContents || !app.isPackaged || quiet || recordNotifications)
+      return null;
+    return latestRelease();
   });
   // Whether this page's window is on screen right now (the page also hears each change).
   ipcMain.handle('office:visible', (e) => {

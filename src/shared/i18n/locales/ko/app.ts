@@ -3,6 +3,11 @@ import type { Messages } from '../en';
 export const app: Messages['app'] = {
   docTitle: 'Agent Office · 우리 사무실',
   docTitleUnread: (n) => `(${n}) Agent Office`,
+  releaseNotice: {
+    available: (version) => `에이전트 오피스 ${version} 버전이 나왔어요.`,
+    view: '새 버전 보기',
+    dismiss: '이 버전 건너뛰기',
+  },
   tabs: {
     office: { title: '우리 사무실', short: '사무실' },
     memory: { title: '기억 서랍', short: '기억' },
