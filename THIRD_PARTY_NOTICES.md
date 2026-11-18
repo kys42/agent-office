@@ -8,13 +8,17 @@ Agent Office itself is licensed under the [PolyForm Noncommercial License 1.0.0]
 
 ## Packaged dependencies
 
-React, React DOM, Lucide, Zod, MCP TypeScript SDK, xterm.js (`@xterm/xterm`, `@xterm/addon-fit`, MIT), node-pty (MIT, macOS desktop app only; its N-API prebuild is unpacked next to the asar), Pretendard (OFL-1.1, UI typeface), Galmuri (OFL-1.1, pixel lettering inside the office scene), and JetBrains Mono (OFL-1.1, numerals and code) are used under their package licenses. Copies are in `public/licenses/` and shipped to `dist/licenses/`. Electron includes its own LICENSE and Chromium notices in the application distribution. The package lock records exact resolved versions.
+React, React DOM, Lucide, Zod, MCP TypeScript SDK, xterm.js (`@xterm/xterm`, `@xterm/addon-fit`, and `@xterm/headless` with `@xterm/addon-serialize` in the terminal host daemon, MIT), node-pty (MIT, macOS desktop app only; its N-API prebuild is unpacked next to the asar), Pretendard (OFL-1.1, UI typeface), Galmuri (OFL-1.1, pixel lettering inside the office scene), and JetBrains Mono (OFL-1.1, numerals and code) are used under their package licenses. Copies are in `public/licenses/` and shipped to `dist/licenses/`. Electron includes its own LICENSE and Chromium notices in the application distribution. The package lock records exact resolved versions.
 
 Research checkouts under `.research/` are not shipped or added to Git. Claude-Mem was inspected for architecture and format comparison; its implementation code was not copied. CASS and MCP Agent Mail include additional license riders and no implementation from those repositories is incorporated.
 
 ## Orca session ingestion
 
 Copyright (c) 2026 Lovecast Inc. MIT License. From stablyai/orca commit ea6a6d60774ac2b74bb6692d1798e3ab13b99ae0: JSONL byte reader, record budget, Codex non-user-origin classifier, and value helpers. Source paths, SHA-256 checksums and limited modifications are in `vendor/orca/manifest.json`; original and runtime copies and complete license are preserved in `vendor/orca/`. `tests/orca-origin.test.ts` ports the original origin test suite; reader boundary cases also inform `tests/ingestion-conformance.test.ts`. The complete license ships in `public/licenses/orca-LICENSE.txt`.
+
+## Terminal host
+
+`desktop/term-host/` is an independent TypeScript implementation. Its socket publication follows the endpoint-ownership rules documented in Orca's `src/main/daemon/AGENTS.md` and `daemon-endpoint-ownership.ts`, and its restored input modes follow Orca's `terminal-mode-rehydrate-sequences.ts` (stablyai/orca, MIT, Copyright (c) 2026 Lovecast Inc.) and Superset's reattach fixes. No Orca or Superset source is copied. Details: `docs/development/TERM-HOST.md`.
 
 ## Agent Sessions parser policies
 
