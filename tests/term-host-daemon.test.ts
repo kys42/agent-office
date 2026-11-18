@@ -172,7 +172,12 @@ test(
 
 test(
   'the app recognises a real built-in session from its process, reads its screen and types into it',
-  { skip: nodePtyMissing(), timeout: 60_000 },
+  {
+    // The process lookup reads macOS terminals (`ttys…`, `ps -E`): Linux `pts/N` is not read yet.
+    skip:
+      nodePtyMissing() || (process.platform !== 'darwin' && 'process lookup reads macOS ttys only'),
+    timeout: 60_000,
+  },
   async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'th-builtin-'));
     const paths = termHostPaths(dataDir);
