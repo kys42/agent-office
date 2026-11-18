@@ -94,7 +94,7 @@ CI timeout은 hosted runner가 사라지므로 로컬 재개와 다르다. 실�
 
 ### 다른 서버와 GitHub Actions
 
-[macOS Signed Release](../../.github/workflows/macos-signed.yml)는 main에 포함된 커밋의 수동 실행 또는 버전 태그로 실행한다. Linux에서 형식·단위·빌드·MCP·UI 검사를 통과한 뒤, macOS arm64/x64 runner에서 최종 서명·공증·실행을 검사한다. Linux/Windows 서버는 소스 검증과 빌드 요청을 맡을 수 있지만 이 경로의 최종 Mac 패키징은 macOS/Xcode Command Line Tools가 필요하다. 일반 PR에는 서명 비밀값을 제공하지 않는다.
+[macOS Signed Release](../../.github/workflows/macos-signed.yml)는 main에 포함된 커밋의 수동 실행 또는 버전 태그로 실행한다. Linux에서 런타임 의존성의 high 이상 감사(`npm audit --omit=dev`, 개발 도구 전용 경고는 제외)·형식·단위·빌드·MCP·UI 검사를 통과한 뒤, macOS arm64/x64 runner에서 최종 서명·공증·실행을 검사한다. Linux/Windows 서버는 소스 검증과 빌드 요청을 맡을 수 있지만 이 경로의 최종 Mac 패키징은 macOS/Xcode Command Line Tools가 필요하다. 일반 PR에는 서명 비밀값을 제공하지 않는다.
 
 GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜치를 main, 허용 태그를 릴리스용 `v*`로 제한한다. 저장소 정책에 맞는 reviewer 보호도 적용한다. 코드 안의 ancestry 검사만으로 악의적인 workflow 변경을 막을 수 없으므로 environment 제한을 생략하지 않는다. 병합 전에 임의 feature ref로 secret job을 실행하지 않는다.
 
