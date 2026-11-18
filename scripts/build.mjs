@@ -6,6 +6,8 @@ await build({
     worker: 'server/worker.ts',
     mcp: 'server/mcp.ts',
     'office-peer': 'server/federation/cli.ts',
+    // The terminal host daemon, run detached as Node through the app's own executable.
+    'term-host': 'desktop/term-host/daemon.ts',
   },
   outdir: 'dist-desktop',
   outExtension: { '.js': '.cjs' },
