@@ -109,6 +109,41 @@ test('nameplate colors survive legacy config, re-import and restart without ente
   }
 });
 
+test('display-only edits keep the live poll; a new Codex route restarts it', () => {
+  const dir = temp();
+  const a = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [a] }));
+  const signals: AbortSignal[] = [];
+  const relay = { hosts: () => [{ id: 'ssh:mini' }] } as unknown as ConstructorParameters<
+    typeof PeerManager
+  >[2];
+  // Every poll stays in flight, so an abort or a second request shows what the edit did.
+  const manager = new PeerManager(
+    dir,
+    (_peer, _path, signal) => {
+      signals.push(signal!);
+      return new Promise(() => {});
+    },
+    relay,
+  );
+  try {
+    manager.start();
+    assert.equal(signals.length, 1);
+    const update = { action: 'update', officeId: a.officeId, tags: [], projects: {} };
+    manager.command({ ...update, label: 'Renamed', color: 'rose' });
+    assert.equal(signals[0].aborted, false);
+    assert.equal(signals.length, 1);
+    assert.equal(manager.state().peers[0].label, 'Renamed');
+    assert.equal(manager.state().peers[0].color, 'rose');
+    manager.command({ ...update, label: 'Renamed', codexHostId: 'ssh:mini' });
+    assert.equal(signals[0].aborted, true);
+    assert.equal(signals.length, 2);
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('export allowlist removes private fields and opaque keys isolate parents and actors', () => {
   const root = fixture();
   const child = {
