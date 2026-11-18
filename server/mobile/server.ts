@@ -398,6 +398,9 @@ export class MobileServer {
         reply(200, { ok: true });
         return;
       } else if (route === '/mobile/api/state') {
+        // Resolve slower capability checks before taking the visibility snapshot.
+        // Privacy/exclusion changes while this await is pending must win.
+        const sendEnabled = await this.backend.sendEnabled();
         const s = await this.backend.snapshot();
         result = {
           agents: visible(s).map((a: Session) => ({
@@ -415,7 +418,7 @@ export class MobileServer {
             archived: !!a.archived,
           })),
           privacy: s.preferences.privacy,
-          sendEnabled: await this.backend.sendEnabled(),
+          sendEnabled: !s.preferences.privacy && sendEnabled,
           at: Date.now(),
           lastSync: s.lastSync,
         } satisfies MobileSnapshot;
