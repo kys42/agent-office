@@ -19,6 +19,7 @@ import {
   olderMobilePage,
   type MobileConversation,
 } from '../shared/mobile-conversation';
+import { requestSignal } from '../shared/request-signal';
 import { MOODS } from '../shared/types';
 import { m, setLocale, resolveLocale, getLocale } from '../shared/i18n';
 import '../styles/tokens.css';
@@ -41,9 +42,8 @@ async function api<T>(route: string, value: unknown = {}, signal?: AbortSignal):
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Agent-Office-Mobile': '1' },
     body: JSON.stringify(value),
-    signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(60000)])
-      : AbortSignal.timeout(60000),
+    // Not AbortSignal.any directly: iOS Safari < 17.4 lacks it and every request would throw.
+    signal: requestSignal(60000, signal),
   });
   if (!res.ok) throw new ApiError(res.status);
   return res.json();

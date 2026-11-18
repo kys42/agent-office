@@ -99,6 +99,24 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '우리 오피스', exact: true })).toBeVisible();
 }
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test('older iOS Safari without AbortSignal.any still loads colleagues and conversations', async ({
+  page,
+}) => {
+  // iOS Safari < 17.4. Calling the missing API used to throw in every cancellable request,
+  // so the roster never loaded and the page showed only the disconnected banner.
+  await page.addInitScript(() => {
+    delete (AbortSignal as { any?: unknown }).any;
+  });
+  await mock(page);
+  await login(page);
+  expect(await page.evaluate(() => 'any' in AbortSignal)).toBe(false);
+  await expect(page.locator('.agent')).toHaveCount(2);
+  await expect(page.getByText('연결이 끊겼습니다.', { exact: false })).toHaveCount(0);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.getByText('작업을 확인해줘', { exact: true })).toBeVisible();
+  await expect(page.locator('.chat [role="alert"]')).toHaveCount(0);
+  await expect(page.getByText('Codex Desktop으로 보내기', { exact: true })).toBeVisible();
+});
 test('conversation renders before slow destination discovery and remains readable on lookup failure', async ({
   page,
 }) => {

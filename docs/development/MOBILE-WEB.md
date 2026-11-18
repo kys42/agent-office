@@ -19,6 +19,7 @@
 - 컴퓨터 잠자기·앱 종료·Tailscale 연결 해제를 확인한다. 계속 시간 초과면 Tailscale 접근 규칙과 기기 방화벽을 확인한다.
 - 페이지가 열리고 코드가 거부되면 현재 설정의 코드를 복사한다. 앱 재시작·코드 변경 뒤에는 다시 로그인한다.
 - 수동/자동 목록 갱신이 겹치면 이전 읽기를 취소하고 최신 응답만 화면에 적용한다. 이것은 전송 요청을 취소하거나 자동 재전송하는 동작이 아니다.
+- 요청 취소와 60초 시간 제한은 `src/shared/request-signal.ts`가 묶는다. `AbortSignal.any`가 없는 iOS Safari 17.4 미만에서는 AbortController 하나로 두 조건을 따른다. 이 API를 직접 부르면 구형 iPhone에서 모든 요청이 시작 전에 실패해 `연결이 끊겼습니다`만 계속 보인다.
 
 선택 가능한 주소는 loopback 또는 이 컴퓨터 인터페이스의 Tailscale 범위 IPv4(100.64.0.0/10)다. wildcard·공용 IP·일반 LAN 바인딩은 제공하지 않는다. 직접 HTTP를 사용하고 Tailscale 구간은 WireGuard 암호화를 사용한다. 이 HTTP 서버를 공용 역방향 프록시로 노출하거나 임의 Host/Origin을 허용하도록 변경하지 않는다. Tailscale Serve/Funnel과 계정 연동은 이번 범위 밖이다. 세션 쿠키는 HttpOnly/SameSite=Strict이며 직접 HTTP라 Secure 속성은 붙이지 않는다.
 
