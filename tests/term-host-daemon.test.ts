@@ -240,6 +240,7 @@ test(
           data: (_id, data) => void (live += Buffer.from(data).toString('utf8')),
           resync() {},
           exit() {},
+          lost() {},
         },
       );
       assert.match(await render(view.restore), /faint plain/);

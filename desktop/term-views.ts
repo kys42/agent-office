@@ -22,6 +22,8 @@ export interface TermViewSink {
   /** The view fell behind: clear it and draw this instead (output resumes after it). */
   resync(viewId: string, restore: string): void;
   exit(viewId: string, exit: ExitInfo): void;
+  /** Its connection to the daemon closed while the session did not end (the daemon stopped). */
+  lost(viewId: string): void;
 }
 
 export interface TermViewDeps {
@@ -72,7 +74,11 @@ export class TermViews {
       sink.exit(viewId, exit);
       this.end(viewId);
     });
-    client.onClose(() => this.views.delete(viewId));
+    // Closed by anything but this view's own end (a detach, the window leaving, an exit): the
+    // window must know, or it would keep typing into nothing.
+    client.onClose(() => {
+      if (this.views.delete(viewId)) sink.lost(viewId);
+    });
     let result;
     try {
       result = await client.attach(session, { scrollback: TERM_VIEW_SCROLLBACK });

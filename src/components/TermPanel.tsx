@@ -43,10 +43,15 @@ export default function TermPanel({ target }: { target: TermTarget }) {
     let ended = false;
     let attaching = false;
     let viewId: string | null = null;
+    /** A restored screen is being parsed at the session's size: no fitting until it is done. */
+    let restoring = false;
     /** The size main has: a resize to it again would only signal the program for nothing. */
     let sent = { cols: 0, rows: 0 };
-    // Output that may arrive before the attach answer (another IPC channel), per view.
+    // What may arrive before the attach answer (other IPC channels), per view: its output, and
+    // that it ended or lost its connection.
     const early = new Map<string, (Uint8Array | string)[]>();
+    const endedEarly = new Set<string>();
+    const lostEarly = new Set<string>();
     const xterm = new XTerm({
       fontFamily: '"JetBrains Mono", Menlo, Monaco, monospace',
       fontSize: 12,
@@ -72,7 +77,8 @@ export default function TermPanel({ target }: { target: TermTarget }) {
         cols: clampCols(xterm.cols),
         rows: clampRows(xterm.rows),
       };
-      if (next.cols !== xterm.cols || next.rows !== xterm.rows) xterm.resize(next.cols, next.rows);
+      const differs = next.cols !== xterm.cols || next.rows !== xterm.rows;
+      if (differs && !restoring) xterm.resize(next.cols, next.rows);
       return next;
     };
     // Output not drawn yet stays bounded: above the high-water mark main stops reading this
@@ -80,9 +86,26 @@ export default function TermPanel({ target }: { target: TermTarget }) {
     const flow = new OutputFlow((paused) => {
       if (viewId) void term.command({ type: 'flow', viewId, paused }).catch(() => {});
     });
-    const draw = (data: Uint8Array | string) => {
+    const draw = (data: Uint8Array | string, done?: () => void) => {
       flow.wrote(data.length);
-      xterm.write(data, () => flow.drew(data.length));
+      xterm.write(data, () => {
+        flow.drew(data.length);
+        done?.();
+      });
+    };
+    /**
+     * A screen from the daemon replaces what is drawn, in parsing order: a full reset (RIS) and
+     * the size it was taken at go after any output still queued, then the screen, then `done`.
+     */
+    const replace = (restore: string, cols: number, rows: number, done?: () => void) => {
+      restoring = true;
+      xterm.write('\x1bc', () => {
+        if (cols !== xterm.cols || rows !== xterm.rows) xterm.resize(cols, rows);
+      });
+      draw(restore, () => {
+        restoring = false;
+        done?.();
+      });
     };
     const offData = term.onData((id, data) => {
       if (id === viewId) draw(data);
@@ -90,14 +113,33 @@ export default function TermPanel({ target }: { target: TermTarget }) {
     });
     const offResync = term.onResync((id, restore) => {
       if (id !== viewId) return;
-      xterm.reset();
-      draw(restore);
+      // Taken at the session's size, which this view set; then fitted again.
+      replace(restore, sent.cols || xterm.cols, sent.rows || xterm.rows, () => size());
     });
-    const offExit = term.onExit((id) => {
-      if (id !== viewId || !alive) return;
+    const finish = () => {
       viewId = null;
       ended = true;
       setStatus('ended');
+    };
+    const offExit = term.onExit((id) => {
+      if (!alive) return;
+      if (id === viewId) finish();
+      else if (!viewId) endedEarly.add(id);
+    });
+    // Its connection to the daemon closed without the session ending (the daemon stopped):
+    // nothing typed would arrive, so the view lets go and tries once to attach again.
+    const lose = () => {
+      viewId = null;
+      setStatus('error');
+      setError(t.shell.term.lost);
+      setTimeout(() => {
+        if (alive && wantsAttach({ mounted: alive, visible: visible(), ended })) void attach();
+      }, 500);
+    };
+    const offLost = term.onLost((id) => {
+      if (!alive) return;
+      if (id === viewId) lose();
+      else if (!viewId) lostEarly.add(id);
     });
     const input = xterm.onData((data) => {
       if (!viewId) return;
@@ -108,7 +150,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       size();
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        if (!viewId) return;
+        if (!viewId || restoring) return;
         const next = size();
         if (next.cols === sent.cols && next.rows === sent.rows) return;
         sent = next;
@@ -131,19 +173,16 @@ export default function TermPanel({ target }: { target: TermTarget }) {
           if (!a.exited) void term.command({ type: 'detach', viewId: a.viewId }).catch(() => {});
           return;
         }
-        // The screen as the daemon keeps it, drawn at its size, then fitted to this window.
-        xterm.reset();
-        xterm.resize(a.cols, a.rows);
-        draw(a.restore);
-        if (a.exited) {
-          ended = true;
-          setStatus('ended');
-          return;
-        }
-        viewId = a.viewId;
+        // The screen as the daemon keeps it, parsed at its size, then fitted to this window
+        // (main already resized the session to `wanted`, which makes the program draw again).
+        await new Promise<void>((done) => replace(a.restore, a.cols, a.rows, done));
+        if (!alive) return;
+        if (a.exited || endedEarly.has(a.viewId)) return finish();
+        if (lostEarly.has(a.viewId)) return lose();
         sent = wanted;
+        size();
         for (const chunk of early.get(a.viewId) ?? []) draw(chunk);
-        early.clear();
+        viewId = a.viewId;
         setStatus('live');
         refit();
         xterm.focus();
@@ -154,6 +193,8 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       } finally {
         attaching = false;
         early.clear();
+        endedEarly.clear();
+        lostEarly.clear();
       }
     };
     const detach = () => {
@@ -179,6 +220,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       offData();
       offResync();
       offExit();
+      offLost();
       input.dispose();
       detach();
       xterm.dispose();

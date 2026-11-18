@@ -7,11 +7,11 @@ import { demoSnapshot } from '../../src/lib/demo';
 const VIEW = '0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b3c';
 const VIEW2 = '0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b3d';
 
-async function setup(page: Page, options: { exited?: boolean } = {}) {
+async function setup(page: Page, options: { exited?: boolean; exitEarly?: boolean } = {}) {
   const s = demoSnapshot();
   await page.setViewportSize({ width: 640, height: 400 });
   await page.addInitScript(
-    ({ s, VIEW, VIEW2, exited }) => {
+    ({ s, VIEW, VIEW2, exited, exitEarly }) => {
       const w = window as any;
       w.commands = [];
       w.inputs = [];
@@ -19,6 +19,10 @@ async function setup(page: Page, options: { exited?: boolean } = {}) {
       localStorage.setItem('office:onboarding:v1:live', 'seen');
       const data = new Set<(id: string, d: Uint8Array) => void>();
       const exits = new Set<(id: string, e: unknown) => void>();
+      const resyncs = new Set<(id: string, r: string) => void>();
+      const losts = new Set<(id: string) => void>();
+      w.resync = (restore: string) => resyncs.forEach((cb) => cb(w.viewId(), restore));
+      w.lose = () => losts.forEach((cb) => cb(w.viewId()));
       let attaches = 0;
       w.viewId = () => (attaches > 1 ? VIEW2 : VIEW);
       w.emit = (text: string) =>
@@ -43,7 +47,9 @@ async function setup(page: Page, options: { exited?: boolean } = {}) {
             w.commands.push(c.type === 'resize' ? 'resize' : c);
             if (c.type === 'attach') {
               attaches++;
-              if (!exited) setTimeout(() => w.emit('\r\nlive-after-attach'), 0);
+              // The session ends right as it attaches: its exit comes before this answer.
+              if (exitEarly) w.exit();
+              else if (!exited) setTimeout(() => w.emit('\r\nlive-after-attach'), 0);
               return {
                 viewId: w.viewId(),
                 restore: '\x1b[?2026hrestored-screen ❯\x1b[?2026l',
@@ -59,7 +65,14 @@ async function setup(page: Page, options: { exited?: boolean } = {}) {
             data.add(cb);
             return () => data.delete(cb);
           },
-          onResync: () => () => {},
+          onResync: (cb: any) => {
+            resyncs.add(cb);
+            return () => resyncs.delete(cb);
+          },
+          onLost: (cb: any) => {
+            losts.add(cb);
+            return () => losts.delete(cb);
+          },
           onExit: (cb: any) => {
             exits.add(cb);
             return () => exits.delete(cb);
@@ -73,7 +86,7 @@ async function setup(page: Page, options: { exited?: boolean } = {}) {
         },
       };
     },
-    { s, VIEW, VIEW2, exited: !!options.exited },
+    { s, VIEW, VIEW2, exited: !!options.exited, exitEarly: !!options.exitEarly },
   );
   await page.goto('/#term');
 }
@@ -151,4 +164,39 @@ test('closing the window goes through main (the session keeps running)', async (
   await expect.poll(() => screenText(page)).toContain('restored-screen');
   await page.getByRole('button', { name: '닫기 (계속 실행)' }).click();
   await expect.poll(() => page.evaluate(() => (window as any).windowCalls)).toContain('close');
+});
+
+test('a fresh screen from the daemon replaces what was drawn, after what was queued', async ({
+  page,
+}) => {
+  await setup(page);
+  await expect.poll(() => screenText(page)).toContain('live-after-attach');
+  await page.evaluate(() => {
+    const w = window as any;
+    w.emit('\r\nqueued-before-resync');
+    w.resync('\x1b[Hfresh-screen-only');
+  });
+  await expect.poll(() => screenText(page)).toContain('fresh-screen-only');
+  const text = await screenText(page);
+  expect(text).not.toContain('restored-screen');
+  expect(text).not.toContain('queued-before-resync');
+});
+
+test('an exit that arrives before the attach answer still ends the view', async ({ page }) => {
+  await setup(page, { exitEarly: true });
+  await expect(page.getByRole('status')).toHaveText('에이전트가 끝났어요.');
+  await page.locator('.xterm').click();
+  await page.keyboard.type('x');
+  expect(await page.evaluate(() => (window as any).inputs.length)).toBe(0);
+});
+
+test('a lost connection says so and attaches again', async ({ page }) => {
+  await setup(page);
+  await expect.poll(() => screenText(page)).toContain('live-after-attach');
+  await page.evaluate(() => (window as any).lose());
+  await expect(page.getByRole('alert')).toContainText('내장 터미널과 연결이 끊겼어요');
+  await expect
+    .poll(async () => (await commands(page)).filter((c: any) => c.type === 'attach').length)
+    .toBe(2);
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });

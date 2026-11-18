@@ -118,6 +118,11 @@ const api: OfficeAPI = {
             ipcRenderer.on('office:term-exit', f);
             return () => ipcRenderer.removeListener('office:term-exit', f);
           },
+          onLost: (cb: (viewId: string) => void) => {
+            const f = (_: unknown, viewId: string) => cb(viewId);
+            ipcRenderer.on('office:term-lost', f);
+            return () => ipcRenderer.removeListener('office:term-lost', f);
+          },
           window: (what: string) => action('office:term-window', what),
         } as OfficeAPI['term'],
       }

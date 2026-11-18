@@ -31,6 +31,7 @@ export const shell: Messages['shell'] = {
   term: {
     hint: '앱이 붙잡고 있어서 이 창이나 앱을 닫아도 계속 실행돼요.',
     ended: '에이전트가 끝났어요.',
+    lost: '내장 터미널과 연결이 끊겼어요. 다시 연결하는 중…',
     away: '창이 가려진 동안은 멈춰 있어요. 다시 보이면 이어서 보여요.',
     killTitle: '내장 터미널의 에이전트를 끝낼까요?',
     killConfirm: (names) =>

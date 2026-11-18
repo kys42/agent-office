@@ -1197,6 +1197,8 @@ export interface OfficeAPI {
     onExit: (
       cb: (viewId: string, exit: { code: number | null; signal: number | null }) => void,
     ) => () => void;
+    /** The view's connection to the daemon closed without the session ending. */
+    onLost: (cb: (viewId: string) => void) => () => void;
     /**
      * The window itself: `target` reads what it shows, `focus` takes the keyboard, `close`
      * closes it (detaching). `top` reads whether it stays on top and `top-on`/`top-off` set it.

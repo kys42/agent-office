@@ -1016,6 +1016,9 @@ function setupBuiltinViews(builtin: TermBuiltin) {
       if (!sender.isDestroyed())
         sender.send('office:term-exit', viewId, { code: exit.code, signal: exit.signal });
     },
+    lost: (viewId: string) => {
+      if (!sender.isDestroyed()) sender.send('office:term-lost', viewId);
+    },
   });
   /**
    * "Go to its terminal" for a built-in session: its window, opened beside the window in front

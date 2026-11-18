@@ -33,6 +33,7 @@ export const shell = {
   term: {
     hint: 'Kept by the app: it keeps running when this window or the app closes.',
     ended: 'The agent has ended.',
+    lost: 'Lost the connection to the built-in terminal. Connecting again…',
     away: 'Paused while hidden. It shows again when the window does.',
     killTitle: 'End the agent in the built-in terminal?',
     killConfirm: (names: string) =>

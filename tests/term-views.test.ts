@@ -18,9 +18,11 @@ const VIEW = '00000000-0000-4000-8000-000000000001';
 function setup() {
   const t = fakeTermHost({ exitRetentionMs: 60_000 });
   let n = 0;
+  const servers: ReturnType<typeof connectionPair>[0][] = [];
   const views = new TermViews({
     async connect() {
       const [server, client] = connectionPair();
+      servers.push(server);
       t.host.handleConnection(server);
       const c = new TermHostClient(client);
       await c.hello(FAKE_TOKEN);
@@ -28,17 +30,19 @@ function setup() {
     },
     newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
   });
-  const seen: { data: string[]; resync: string[]; exits: number } = {
+  const seen: { data: string[]; resync: string[]; exits: number; lost: string[] } = {
     data: [],
     resync: [],
     exits: 0,
+    lost: [],
   };
   const sink: TermViewSink = {
     data: (_id, d) => void seen.data.push(Buffer.from(d).toString('utf8')),
     resync: (_id, r) => void seen.resync.push(r),
     exit: () => void seen.exits++,
+    lost: (id) => void seen.lost.push(id),
   };
-  return { t, views, seen, sink };
+  return { t, views, seen, sink, servers };
 }
 
 async function session(t: ReturnType<typeof fakeTermHost>, id: string, cols = 80, rows = 24) {
@@ -142,7 +146,12 @@ test('a view of another size resizes the session once; two views keep their own 
     2,
     'ao-2',
     { cols: 120, rows: 40 },
-    { data: (_i, d) => void other.push(Buffer.from(d).toString()), resync() {}, exit() {} },
+    {
+      data: (_i, d) => void other.push(Buffer.from(d).toString()),
+      resync() {},
+      exit() {},
+      lost() {},
+    },
   );
   assert.notEqual(a.viewId, b.viewId);
   await sleep(10);
@@ -205,4 +214,22 @@ test('a view behind its screen pauses reading its own connection only', async ()
   // A connection that cannot pause (the in-memory fake) is left alone.
   const [, plain] = connectionPair();
   new TermHostClient(plain).pauseReading(true);
+});
+
+test('a view whose connection drops (the daemon stopped) is told; its own end is not', async () => {
+  const { t, views, seen, sink, servers } = setup();
+  const pty = await session(t, 'ao-5');
+  const a = await views.attach(1, 'ao-5', { cols: 80, rows: 24 }, sink);
+  const b = await views.attach(1, 'ao-5', { cols: 80, rows: 24 }, sink);
+  views.detach(1, b.viewId);
+  await sleep(10);
+  assert.deepEqual(seen.lost, []);
+  servers[0].destroy();
+  await sleep(10);
+  assert.deepEqual(seen.lost, [a.viewId]);
+  assert.equal(views.count, 0);
+  // Gone: keys to it go nowhere, nothing throws.
+  views.write(1, a.viewId, 'x');
+  pty.exit(0);
+  await t.host.shutdown();
 });
