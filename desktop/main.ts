@@ -146,6 +146,8 @@ import {
 } from './codex-send.js';
 import { findCodexTerminal, lookupCodexTerminal } from './codex-focus.js';
 import { composerFor } from './composer/index.js';
+import { renameSession } from './session-rename.js';
+import { sessionRenameFor } from '../src/shared/session-rename.js';
 import { AttachmentError, AttachmentStore } from './attachments.js';
 import { promptsFor } from './prompts/index.js';
 import { answerRequest, decodeSetting, inspectPrompt } from './answers.js';
@@ -2084,6 +2086,30 @@ function setupIPC() {
   ipcMain.handle('office:send', (e, id, text, options) => {
     trusted(e);
     return sendMessage(id, text, options);
+  });
+  // Renames the agent's own session (#384): its rename command, typed as one line into its live
+  // terminal by the same send as a follow-up. Local sessions only; the agent's adapter decides
+  // the command and whether it is taken mid-turn (src/shared/session-rename.ts).
+  ipcMain.handle('office:rename-session', async (e, id, title): Promise<SendResult> => {
+    trusted(e);
+    if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+    const known = await identity(id);
+    let sessionId: string | undefined;
+    try {
+      return await renameSession(title, {
+        composer: composerFor(known.provider),
+        command: sessionRenameFor(known.provider),
+        live: async () => {
+          const terminal = await live(known, true);
+          sessionId = terminal?.process.sessionId;
+          return terminal;
+        },
+        noTerminal: () => noTerminal(known),
+        send: (terminal, line, options) => sendToTerminal(terminal, line, undefined, options),
+      });
+    } finally {
+      if (sessionId) forgetTerminal(sessionId);
+    }
   });
   mobile = new MobileServer(app.getPath('userData'), path.join(root, 'dist'), {
     snapshot: () => bridge.call('snapshot'),

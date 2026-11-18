@@ -242,6 +242,28 @@ terminal_title = ["session-id", "thread-name", "project"]
 - **작업 목록 옆 짧은 글(제보의 "다 보이지 않아"):** `wholeText`가 작업 목록(`☐◻◼✔` 줄이나 `ctrl+t to hide tasks`)이 보이면 무조건 전체를 모른다고 했다(목록 옆 상자 높이를 잰 적 없음). 그런데 상자 높이 제한은 두 렌더러 모두 최소 3줄(`max(3, …)`)이라, 두 가로줄 사이에 **1~2줄**로 그려진 상자는 잘린 상자일 수 없다. Orca는 `draft`를 따로 줄 때 상자 줄을 `❯` 한 줄만 남기고(빈 줄은 `tail`에서 빠짐) 글은 "2줄 안에 확실히 들어감" 규칙으로 따로 따진다. 그래서 작업 목록은 상자가 3줄 이상일 때만 '전체 모름'으로 본다. 붙여넣기 자리표시, 2줄을 넘을 수 있는 Orca 글, 높이 12 미만 tmux 창은 그대로 '일부'다.
 - **남는 틈:** 두 번째 읽기와 → 사이(CLI 1회)에 사람이 끼어 치면 → 는 커서만 옮기고, 다음 읽기에서 다른 글로 보여 Enter는 누르지 않는다. 하단 메뉴(footer)에 포커스가 가 있으면 →는 메뉴 항목을 옮기는데 화면에서 이를 구분하지 못한다(기존 [그대로 보내기]의 Enter도 같은 틈).
 
+## 세션 제목 바꾸기 (#384)
+
+정본 `src/shared/session-rename.ts`(제목 검사·에이전트별 명령·메뉴 판단, 렌더러와 main이 함께 씀), `desktop/session-rename.ts`(`renameSession`, 의존성 주입), IPC `office:rename-session`, 렌더러 `Inspector` 카드 메뉴(그리기만).
+
+- **무엇:** 카드 ⋯ 메뉴의 **세션 제목 바꾸기**가 에이전트 자신의 대화 제목을 바꾼다. 실행 중인 세션에 `/rename <제목>` 한 줄을 넣고 Enter. 원본 파일에 쓰지 않고 SDK도 쓰지 않는다(#264를 넣지 않은 이유). 바뀐 제목은 에이전트가 직접 기록하고 수집기가 평소대로 읽는다: Claude는 `custom-title` 레코드(`normalize.ts`가 가장 높은 순위), Codex는 `session_index.jsonl`의 `thread_name`·state DB `threads.name`(`codex.ts`). 사무실 별명(`alias`, 메뉴 "사무실 별명 바꾸기")은 이 앱 안에서만 쓰는 따로인 이름이고, 별명이 있으면 카드에는 계속 별명이 보인다(알림에 그렇게 적는다).
+- **보내는 길:** 후속 메시지와 같은 `sendToTerminal` 한 번. 대상 확인(`locateTerminal`), 기록·전면 확인, 입력창 읽기, 붙여넣기 뒤 화면 확인, Enter 직전 재확인이 모두 그대로다. 클립보드 백업을 넘기지 않으므로 입력창에 쓰던 글이 있으면 **지우지 않고 거절**한다("입력창에 이미 글이 있어요"). 원격 사무실 세션은 받지 않는다(`identity`가 거절, 메뉴도 없음).
+- **에이전트별 차이는 어댑터에만:** `SESSION_RENAME[provider]`가 명령 줄(`line(title)`)과 작업 중 허용(`whileBusy`)을 갖는다. 호출부에는 에이전트 분기가 없다.
+  - Claude Code(2.1.327 실행 파일): `/rename [name]`(별칭 `/name`), `immediate: true` — 작업 중에도 대기열에 들어가지 않고 바로 실행. 그래서 `idle·busy·shell` 모두 허용, 승인 창 등(`waiting`)은 보내기와 같이 거절.
+  - Codex(0.166): `/rename` 이름 인자. 작업 중 동작은 확인하지 못해 쉬는 중에만(`whileBusy: false`).
+  - **Codex는 지금 보내지 않는다:** 이 앱의 Codex 전송은 `codex queue`(app-server `thread/queue/*`)·Codex Desktop이고 TUI에 치지 않는다. 0.166 실행 파일에서 슬래시 명령은 TUI(`tui/src/chatwidget/slash_dispatch.rs`)가 처리하고 `/rename`은 `thread/name/set`을 부르는 반면, 큐는 서버가 곧바로 모델 턴을 시작한다("resume the thread before starting a queued message"). 큐로 보내면 `/rename X`가 프롬프트로 모델에 갈 수 있다. 그래서 컴포저 어댑터의 전달 방식이 `terminal`이 아니면(`codexQueueComposer`는 `queue`) main이 `notTyped`로 거절하고, 메뉴도 대상이 대기열·Desktop이면 이유와 함께 끈다. Codex TUI 입력창 어댑터가 생기면 `whileBusy: false` 규칙으로 바로 켜진다.
+  - **app-server `thread/name/set` 검토(후속 후보, 이번에는 넣지 않음):** 0.166 스키마(`codex app-server generate-json-schema`)에 `thread/name/set { threadId, name } → {}`가 있다.
+    - 임시 `CODEX_HOME`에서 실험했다(실제 세션·터미널 없음). 따로 띄운 app-server로 다른 서버가 들고 있는 스레드와 꺼진 스레드 모두 이름이 바뀌었다. `session_index.jsonl`과 state DB `threads.name`에 둘 다 남았다. 들고 있던 서버의 `thread/read`도 새 이름을 돌려주고, 정상 종료해도 되돌리지 않았다.
+    - 넣지 않은 이유 1: 앱에는 app-server JSON-RPC 클라이언트가 없다. `codex queue`는 CLI를 한 번 실행할 뿐이다. 요청을 stdin에 모아 기존 `deps.run`으로 보내 보면, 서버가 `initialize`만 답하고 EOF에서 끝나 `thread/name/set`에는 답하지 않는다. 그래서 새 대화형 spawn 클라이언트가 필요하다.
+    - 이유 2: 이름 바꿀 때마다 실제 `CODEX_HOME`에서 app-server를 하나 더 띄운다(DB 마이그레이션 등).
+    - 이유 3: `thread/name/updated` 알림은 부른 서버의 클라이언트에만 가서, 실행 중인 TUI 화면의 이름은 다시 열 때까지 그대로다.
+    - 이유 4: 턴 도중에 살아 있는 서버가 메모리의 이름으로 덮어쓰는지는 인증이 없어 확인하지 못했다.
+    - 이유 5: 메뉴 판단도 바뀐다(터미널 대신 세션 상태로 작업 중을 판단하고, 꺼진 대화까지 범위가 넓어짐).
+  - OpenClaw: 명령 없음(`null`).
+- **제목 검사(`checkSessionTitle`, 고치지 않고 거절):** 문자열, 앞뒤 공백 제거 뒤 비어 있지 않음, UTF-16 100자 이하(한글 한 음절 = 1). 제어 문자(C0·DEL·C1, 탭·줄바꿈 포함)·줄/문단 구분자·양방향 제어 문자는 거절 — 키 입력이 되거나 화면에 다르게 그려져 확인이 맞지 않는다. `/`·`@`로 시작하는 낱말은 거절 — Claude Code의 명령·파일 목록이 열려 Enter가 항목을 고른다(`@` 완성 화면은 `readPrompt`가 닫힘으로 보지만 미리 막는다). 끝의 `\`도 거절 — Claude Code에서 `\`+Enter는 줄바꿈이다. 낱말 가운데의 `/`·`@`(`feat/x`, `a@b.com`)와 `#`·`!`(줄 맨 앞이 `/rename`이라 셸·메모 모드가 아님)는 그대로 된다. 렌더러가 먼저 같은 규칙으로 알려 주고, main이 다시 검사한다.
+- **메뉴(`renameBlock`):** 데스크탑 앱에서만 보이고(웹·데모에는 없음) 못 쓸 때는 끄고 그 아래에 이유를 적는다: 지원 안 함 → ‘터미널로 보내기’ 꺼짐 → 화면 가리기 → 터미널 없음(Orca 탭만 찾은 경우 포함) → 대기열·Desktop 전달 → 입력 못 받음 → 작업 중(쉬는 중에만 받는 에이전트). 보낸 뒤 알림: "세션 제목을 바꾸라고 보냈어요. 여기 반영되기까지 잠시 걸릴 수 있어요."
+- **실제 세션에서 확인할 것(자동 테스트는 가짜 tmux·Orca만):** Claude Code에서 붙여넣은 `/rename 제목`이 명령으로 실행되는지(인자가 있으면 명령 목록이 닫혀 `readPrompt`가 상자를 읽는지), 작업 중 즉시 실행되는지, `custom-title`이 남아 카드 제목이 바뀌는지, Orca와 tmux 각각.
+
 ## 질문·플랜·권한 확인에 답하기 (#127)
 
 정본 `desktop/prompts/`(에이전트별 어댑터: `claude-code.ts` 화면·키, `claude-target.ts` 세션·기록), `desktop/answers.ts`(공통 흐름), `desktop/main.ts`(IPC·설정·확인창), 렌더러 `src/components/RequestCard.tsx`·`src/lib/usePrompt.ts`. 수집 쪽은 `server/adapters/requests.ts`.

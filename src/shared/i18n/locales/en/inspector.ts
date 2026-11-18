@@ -20,7 +20,41 @@ export const inspector = {
   saveNickname: 'Save nickname',
   originalName: 'Original name',
   hiddenTeammate: 'Hidden teammate',
-  rename: 'Rename',
+  rename: 'Change office nickname',
+  /**
+   * Renaming the agent's own session (#384): its rename command typed into the running session.
+   * The office nickname above stays a separate, office-only name.
+   */
+  sessionTitle: {
+    menu: 'Rename session',
+    label: 'New session title',
+    placeholder: "The agent's own session title",
+    send: 'Send session title',
+    cancel: 'Cancel',
+    hint: 'Typed into the running session as /rename <title>',
+    sent: 'Sent the new session title. It can take a moment to show here.',
+    sentNicknamed:
+      'Sent the new session title. It can take a moment to show here; the card keeps showing the office nickname.',
+    /** Why the menu item is off: short, under the item. */
+    blocks: {
+      unsupported: "This agent can't be renamed from here",
+      off: 'Turn on ‘Send to terminal’ first',
+      privacy: 'Not while the screen is hidden',
+      noTerminal: 'No running terminal found',
+      notTyped: "Its messages go to a queue, which doesn't run commands",
+      notReady: "It isn't taking input right now",
+      busy: 'Available once it finishes working',
+    },
+    notTyped: (agent: string) =>
+      `${agent} gets messages from here through its queue, which doesn't run /rename as a command. Use /rename in ${agent} itself.`,
+    problems: {
+      empty: 'Enter a new title.',
+      tooLong: (max: number) => `Keep it to ${max} characters or fewer.`,
+      control: "A title can't contain line breaks or control characters.",
+      picker: "A word can't start with ‘/’ or ‘@’: it would open the agent's command or file list.",
+      backslash: "A title can't end with ‘\\’: Enter would become a line break.",
+    },
+  },
   zone: 'Zone',
   forkSource: 'Forked from',
   parentTask: 'Parent task',
