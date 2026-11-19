@@ -18,11 +18,11 @@ import {
   Flag,
   Minimize2,
   PawPrint,
-  Rows3,
   Settings,
   Users,
 } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
+import { DockLookIcon } from './DockLookIcon';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
 import { DOCK_RECLAIM } from '../lib/useDockPill';
 import { dockPopovers, isPopoverTrigger } from '../lib/dockPopovers';
@@ -301,13 +301,6 @@ export function DockViewMenu({
     e.preventDefault();
   };
   const look = controls?.look;
-  const LookIcon = !look
-    ? Rows3
-    : look.mode === 'floor'
-      ? Flag
-      : look.mode === 'row'
-        ? Building2
-        : PawPrint;
   const looks: { id: DockMode; icon: typeof PawPrint; name: string; hint: string }[] = [
     { id: 'pet', icon: PawPrint, name: v.pet, hint: v.petHint },
     { id: 'row', icon: Building2, name: v.row, hint: v.rowHint },
@@ -388,12 +381,7 @@ export function DockViewMenu({
         }}
       >
         {/* The look it is now (the menu's own icon for it), and a caret: pressing changes it. */}
-        <span className="dock-view-current" aria-hidden="true">
-          <LookIcon size={size} />
-          {look?.tiny && look.mode !== 'pet' && (
-            <Minimize2 className="dock-view-tiny-mark" size={8} strokeWidth={3} />
-          )}
-        </span>
+        <DockLookIcon look={look} size={size} />
         <ChevronDown
           className="dock-view-caret"
           size={label ? 10 : 8}

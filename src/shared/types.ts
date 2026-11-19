@@ -621,7 +621,10 @@ export interface ViewSettings {
     tally?: boolean;
   };
   /** The big office. */
-  office?: DeskViewSettings;
+  office?: DeskViewSettings & {
+    /** The floating button back to the dock's last look (desktop app only). Missing: on. */
+    returnButton?: boolean;
+  };
 }
 export type ViewMode = keyof ViewSettings;
 export type TextSize = 'small' | 'normal' | 'large' | 'larger';

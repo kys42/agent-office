@@ -48,7 +48,8 @@ export interface ResolvedViews {
   /** `tally`: the pill's numbers (the pet's, counting `pet.tallyGroups`); off, the old summary. */
   dock: DeskView & { hideRead: boolean; tally: boolean };
   tiny: { effects: boolean; tally: boolean };
-  office: DeskView;
+  /** `returnButton`: the floating pill back to the dock (desktop app only). */
+  office: DeskView & { returnButton: boolean };
 }
 
 /** Every group the pet's pill can count, in triage order (resting colleagues never are). */
@@ -93,7 +94,7 @@ export function resolveViews(v?: ViewSettings | null): ResolvedViews {
     },
     dock: { ...deskView(v?.dock), hideRead: on(v?.dock?.hideRead), tally: on(v?.dock?.tally) },
     tiny: { effects: on(v?.tiny?.effects), tally: on(v?.tiny?.tally) },
-    office: deskView(v?.office),
+    office: { ...deskView(v?.office), returnButton: on(v?.office?.returnButton) },
   };
 }
 

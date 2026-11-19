@@ -59,6 +59,7 @@ import {
   WandSparkles,
   type LucideIcon,
   Pin,
+  PictureInPicture2,
   PackageOpen,
   FileText,
   Download,
@@ -843,6 +844,16 @@ export function Settings({
           }
         >
           {deskSwitch('office', 'branch', GitBranch)}
+          {/* The floating way back to the dock: the desktop app only (a browser has no dock). */}
+          {isDesktop && (
+            <SwitchRow
+              icon={PictureInPicture2}
+              label={v.desk.returnButton}
+              hint={v.desk.returnButtonHint}
+              checked={shows.office.returnButton}
+              onChange={() => setView('office', { returnButton: !shows.office.returnButton })}
+            />
+          )}
         </ViewCard>
       </div>
     </section>

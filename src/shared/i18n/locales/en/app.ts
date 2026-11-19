@@ -45,6 +45,17 @@ export const app = {
     miniTitle: (look: string) =>
       `Back to the desktop dock · ${look}, as you left it · switch looks from its View button`,
   },
+  /** The big office's floating pill back to the dock, named after the look it returns to. */
+  returnButton: {
+    label: {
+      pet: 'Back to the desk pet',
+      row: 'Back to the desk row',
+      floor: 'Back to the floor',
+      tinyRow: 'Back to the tiny row',
+      tinyFloor: 'Back to the tiny floor',
+    },
+    title: 'Hide the big office and bring back the desktop dock as you left it',
+  },
   demoBanner: {
     text: 'Demo office · everything here is sample data',
     exit: 'Meet your real teammates',
