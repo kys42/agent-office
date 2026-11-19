@@ -189,7 +189,13 @@ export function useTermChrome(): {
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Escape only dismisses the menu: it must not reach xterm and the running program.
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    };
     window.addEventListener('mousedown', close);
     window.addEventListener('blur', close);
     window.addEventListener('keydown', key, true);
