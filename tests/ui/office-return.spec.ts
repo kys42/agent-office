@@ -6,13 +6,29 @@ import { demoSnapshot } from '../../src/lib/demo';
 // bottom of the office, named after the look the dock was left in. Settings › 모습 › 큰 사무실
 // can switch it off.
 
-const SHOTS =
-  '/private/tmp/claude-501/-Users-pepper-salt-orca-workspaces-agent-office-polyp/277772b0-7e3f-496f-8adf-6706f0d3a32f/scratchpad';
-
 /** The desktop bridge: the dock was left as the tiny row; preferences merge views like the service. */
-async function bridge(page: Page, { desktop = true } = {}) {
+async function bridge(page: Page, { desktop = true, lounge = 0 } = {}) {
   const snapshot = demoSnapshot();
   snapshot.preferences = { ...snapshot.preferences, privacy: false, locale: 'ko' };
+  // `lounge` extra colleagues resting in the lounge (quiet for half a day).
+  const template = snapshot.sessions[0];
+  const quiet = Date.now() - 12 * 3600_000;
+  for (let i = 0; i < lounge; i++)
+    snapshot.sessions.push({
+      ...template,
+      id: `rest-${i}`,
+      nativeId: `rest-${i}`,
+      alias: `쉬는 동료 ${i}`,
+      title: `쉬는 업무 ${i}`,
+      status: 'ready',
+      zone: 'waiting',
+      officeSeat: undefined,
+      pinned: false,
+      archived: false,
+      updatedAt: quiet - i * 60_000,
+      returnedAt: undefined,
+      events: [],
+    });
   await page.addInitScript(
     ({ s, desktop }) => {
       const w = window as any;
@@ -145,7 +161,7 @@ test('a card opened beside the office keeps the pill in the office column', asyn
   expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 0.5);
 });
 
-test('a narrow window keeps the whole pill on screen', async ({ page }) => {
+test('a narrow window keeps the whole pill on screen', async ({ page }, testInfo) => {
   await bridge(page);
   await page.setViewportSize({ width: 390, height: 760 });
   await page.goto('/?lang=ko');
@@ -157,7 +173,29 @@ test('a narrow window keeps the whole pill on screen', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   // It never sits on the stage's controls or the narrow layout's tab bar.
   expect(await overlapsAny(button, '.stage-hud, .sidebar')).toBe(false);
-  await page.screenshot({ path: `${SHOTS}/return-button-narrow.png` });
+  await page.screenshot({ path: testInfo.outputPath('return-button-narrow.png') });
+});
+
+test('a long lounge list scrolls its last row clear of the pill', async ({ page }) => {
+  await bridge(page, { lounge: 30 });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/?lang=ko');
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  await page
+    .getByRole('tab', { name: /대기 라운지/ })
+    .first()
+    .click();
+  const rows = page.locator('.office-list-row');
+  await expect(rows.nth(20)).toBeVisible();
+  const button = pill(page);
+  await expect(button).toBeVisible();
+  // The list has no footer here: the pill sits low, and the list keeps room under its last row.
+  await page.locator('.office-list-scroll').evaluate((el) => (el.scrollTop = el.scrollHeight));
+  const last = rows.last();
+  await expect(last).toBeInViewport();
+  const a = (await button.boundingBox())!;
+  const b = (await last.boundingBox())!;
+  expect(b.y + b.height).toBeLessThanOrEqual(a.y);
 });
 
 test('Settings › 모습 › 큰 사무실 switches the pill off', async ({ page }) => {
@@ -194,15 +232,15 @@ test('the browser preview has no dock to go back to', async ({ page }) => {
 });
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`the pill reads over the office (${colorScheme})`, async ({ page }) => {
+  test(`the pill reads over the office (${colorScheme})`, async ({ page }, testInfo) => {
     await page.emulateMedia({ colorScheme });
     await bridge(page);
     await page.goto('/?lang=ko');
     const button = pill(page);
     await expect(button).toBeVisible();
-    await page.screenshot({ path: `${SHOTS}/return-button-${colorScheme}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`return-button-${colorScheme}.png`) });
     await button.hover();
     await expect.poll(() => button.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
-    await page.screenshot({ path: `${SHOTS}/return-button-${colorScheme}-hover.png` });
+    await page.screenshot({ path: testInfo.outputPath(`return-button-${colorScheme}-hover.png`) });
   });
 }

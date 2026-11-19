@@ -529,14 +529,18 @@ body.is-mac .sidebar-top .brand {
   color: var(--accent);
   background: var(--accent-ink);
 }
-/* The list's own footer (hidden and past colleagues) stays clear below it when it has any. */
-.office-column:has(> .office-list-footer:empty) > .office-return-button,
+/* The lists (office, lounge, archive) and the rooms sit low; only a list footer with something
+   in it (hidden and past colleagues) lifts the pill above it. */
+.office-layout.is-list .office-return-button,
 .office-column:has(> .session-room) > .office-return-button {
   bottom: 26px;
 }
+.office-column:has(> .office-list-footer:not(:empty)) > .office-return-button {
+  bottom: 64px;
+}
 .office-column:has(> .office-return-button) .office-list-scroll,
 .office-column:has(> .office-return-button) > .session-room {
-  padding-bottom: 64px;
+  padding-bottom: 76px;
 }
 /* The office card is its own stacking layer, so its popups (a desk's quick reply, the hidden
    and past colleagues list, menus) cannot rise over the pill: it steps aside while one is open. */
