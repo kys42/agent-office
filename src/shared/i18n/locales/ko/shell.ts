@@ -43,4 +43,18 @@ export const shell: Messages['shell'] = {
     command: '실행 중',
     hidden: '화면 내용을 숨기는 동안에는 내장 터미널을 열 수 없어요.',
   },
+  view: {
+    find: '찾기',
+    findPlaceholder: '터미널에서 찾기',
+    findNext: '다음 (Enter)',
+    findPrev: '이전 (Shift+Enter)',
+    findClose: '닫기 (Esc)',
+    noMatch: '찾는 글자가 없어요',
+    matches: (index, count) => (index >= 0 ? `${index + 1}/${count}` : `${count}`),
+    copy: '복사',
+    paste: '붙여넣기',
+    selectAll: '모두 선택',
+    clearSelection: '선택 해제',
+    fontSize: (px) => `글자 크기 ${px}px`,
+  },
 };

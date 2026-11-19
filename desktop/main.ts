@@ -1076,6 +1076,14 @@ function setupBuiltinViews(builtin: TermBuiltin) {
       return termWindows.setOnTop(e.sender, what === 'top-on');
     throw new Error(m().desktop.badRequest);
   });
+  // A terminal window's right-click Paste: main's own paste into that window, where xterm takes
+  // it like ⌘V (bracketed paste included). The page never reads the clipboard itself.
+  ipcMain.handle('office:term-paste', (e) => {
+    const owned = shellWindows.owns(e.sender) || termWindows.owns(e.sender);
+    if (!owned || e.senderFrame !== e.sender.mainFrame)
+      throw new Error(m().desktop.untrustedWindow);
+    e.sender.paste();
+  });
   ipcMain.handle('office:term', async (e, raw) => {
     trustedTerm(e);
     let command;

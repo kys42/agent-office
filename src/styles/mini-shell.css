@@ -183,3 +183,95 @@ body.shell-mode {
   background: #1c1c1e;
   border-top: 1px solid #fff1;
 }
+/* Both terminal windows (TermChrome.tsx): ⌘F find bar, text-size note and right-click menu.
+   They sit on the dark terminal in both themes. */
+.term-find {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 20px);
+  padding: 3px 4px 3px 8px;
+  border: 1px solid #fff2;
+  border-radius: 8px;
+  background: #2c2c2e;
+  box-shadow: 0 4px 14px #0006;
+  color: #e5e5ea;
+  font-size: 12px;
+}
+.term-find input {
+  width: 180px;
+  min-width: 0;
+  flex: 1;
+  padding: 3px 4px;
+  border: 0;
+  outline: none;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+.term-find-count {
+  min-width: 34px;
+  color: #aeaeb2;
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+.term-find button,
+.term-menu button {
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.term-find button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+.term-find button:hover,
+.term-menu button:hover:not(:disabled) {
+  background: #fff1;
+}
+.term-font-note {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  z-index: 5;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transform: translateX(-50%);
+  color: #e5e5ea;
+  background: #000a;
+  font-size: 12px;
+  pointer-events: none;
+}
+.term-menu {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid #fff2;
+  border-radius: 8px;
+  background: #2c2c2e;
+  box-shadow: 0 6px 20px #0008;
+  color: #e5e5ea;
+  font-size: 12px;
+}
+.term-menu button {
+  padding: 5px 10px;
+  border-radius: 5px;
+  text-align: left;
+}
+.term-menu button:disabled {
+  color: #fff5;
+  cursor: default;
+}

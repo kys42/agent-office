@@ -229,6 +229,9 @@ export const settings: Messages['settings'] = {
   builtinTerminal: '내장 터미널(실험)',
   builtinTerminalHint:
     '세션을 시작할 때 tmux·Orca 없이 앱 안의 터미널을 고를 수 있어요. 그곳에서 띄운 대화는 창을 닫아도 계속 실행되고, 카드에서 쓴 답장도 tmux처럼 그 터미널로 가요. macOS·Linux에서 써요.',
+  termFontSize: '터미널 글자 크기',
+  termFontSizeHint:
+    '미니 터미널·내장 터미널 창의 글자 크기예요. 터미널에서 ⌘= / ⌘- 로도 바꿀 수 있고, ⌘0 을 누르면 기본 크기(12px)로 돌아와요. 이 컴퓨터에만 저장돼요.',
   tmuxSkip: '권한 확인 없이 터미널에 띄우기',
   tmuxSkipHint:
     '세션 시작 창에서 새 세션·이어가기·복제를 띄울 때(Orca·tmux·터미널 앱·명령 복사) Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',

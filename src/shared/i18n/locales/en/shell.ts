@@ -47,4 +47,19 @@ export const shell = {
     command: 'Running',
     hidden: "The built-in terminal can't open while screen content is hidden.",
   },
+  /** Both terminal windows: find bar, right-click menu and text size (⌘F, ⌘=, ⌘-, ⌘0). */
+  view: {
+    find: 'Find',
+    findPlaceholder: 'Find in terminal',
+    findNext: 'Next (Enter)',
+    findPrev: 'Previous (Shift+Enter)',
+    findClose: 'Close (Esc)',
+    noMatch: 'No matches',
+    matches: (index: number, count: number) => (index >= 0 ? `${index + 1}/${count}` : `${count}`),
+    copy: 'Copy',
+    paste: 'Paste',
+    selectAll: 'Select all',
+    clearSelection: 'Clear selection',
+    fontSize: (px: number) => `Text size ${px}px`,
+  },
 };

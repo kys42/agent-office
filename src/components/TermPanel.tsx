@@ -6,6 +6,7 @@ import { LoaderCircle, Power, SquareTerminal, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { OnTopButton, usePopupOnTop } from './WindowPin';
+import { termOptions, useTermChrome } from './TermChrome';
 import {
   clampCols,
   clampRows,
@@ -32,6 +33,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
   const [status, setStatus] = useState<Status>('connecting');
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
+  const chrome = useTermChrome();
   const onTop = usePopupOnTop(term.window);
 
   // The page's own shortcuts must not see terminal keys.
@@ -80,20 +82,11 @@ export default function TermPanel({ target }: { target: TermTarget }) {
         void term.command({ type: 'flow', viewId: id, paused: true }).catch(() => {});
       }
     };
-    const xterm = new XTerm({
-      fontFamily: '"JetBrains Mono", Menlo, Monaco, monospace',
-      fontSize: 12,
-      lineHeight: 1.15,
-      cursorBlink: true,
-      scrollback: TERM_VIEW_SCROLLBACK,
-      macOptionIsMeta: true,
-      macOptionClickForcesSelection: true,
-      allowProposedApi: false,
-      theme: { background: '#1c1c1e', foreground: '#e5e5ea', cursor: '#e5e5ea' },
-    });
+    const xterm = new XTerm(termOptions(TERM_VIEW_SCROLLBACK));
     const fit = new FitAddon();
     xterm.loadAddon(fit);
     xterm.open(el);
+    const unbind = chrome.bind(xterm, () => refit());
     const size = () => {
       let proposed;
       try {
@@ -266,6 +259,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       offLost();
       input.dispose();
       detach();
+      unbind();
       xterm.dispose();
     };
   }, [target.session]);
@@ -328,6 +322,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       </header>
       <div className="mini-shell-body">
         <div ref={host} className="mini-shell-term" />
+        {chrome.ui}
         {status === 'connecting' && (
           <p className="mini-shell-state">
             <LoaderCircle size={14} className="now-spin" /> {t.shell.connecting}

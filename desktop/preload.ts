@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { CardTarget, DockMode, OfficeAPI } from '../src/shared/types.js';
 import type { SnapshotMessage } from '../src/shared/snapshot-patch.js';
 const call = (method: string, ...args: unknown[]) =>
@@ -126,6 +126,11 @@ const api: OfficeAPI = {
           },
           window: (what: string) => action('office:term-window', what),
         } as OfficeAPI['term'],
+        // Both terminal windows: paste where the keyboard is, and a dropped file's path.
+        termView: {
+          paste: () => action('office:term-paste'),
+          pathForFile: (file: File) => webUtils.getPathForFile(file),
+        },
       }
     : {}),
   // Orca is a macOS app: bringing it to the front is offered there only.
