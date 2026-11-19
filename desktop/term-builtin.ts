@@ -38,6 +38,8 @@ export interface BuiltinTerminals {
   write(sessionId: string, data: string): Promise<void>;
   /** Starts a session, starting the daemon first when none runs. */
   create(spec: SessionSpec): Promise<SessionStats>;
+  /** Ends a session and everything in its process group (never starts a daemon). */
+  kill?(sessionId: string): Promise<boolean>;
   /**
    * Brings a session's screen to the front (a terminal window), answering what was done. Left
    * out where the app cannot show one: going there is then refused with a reason.
@@ -68,6 +70,8 @@ export const builtinSupported = (platform: string = process.platform) =>
   platform === 'darwin' || platform === 'linux';
 
 export class TermBuiltin implements BuiltinTerminals {
+  /** Set by main once it can open a terminal window (see `BuiltinTerminals.show`). */
+  show?: (sessionId: string) => Promise<string>;
   private client: Promise<TermHostClient> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private cached: { at: number; value: Promise<BuiltinInventory | null> } | null = null;
@@ -125,6 +129,34 @@ export class TermBuiltin implements BuiltinTerminals {
     } finally {
       this.cached = null;
     }
+  }
+
+  async kill(sessionId: string): Promise<boolean> {
+    const client = await this.connection(false);
+    try {
+      return (await this.timed(client, client.kill(sessionId))).killed;
+    } finally {
+      this.cached = null;
+    }
+  }
+
+  /** One live session's facts (its folder and program), when it runs. */
+  async session(sessionId: string, fresh = true) {
+    return (await this.sessions(fresh))?.sessions.find((s) => s.id === sessionId) ?? null;
+  }
+
+  /**
+   * A connection of its own, for a view (desktop/term-views.ts): only to a daemon that runs,
+   * since a view needs a session there.
+   */
+  connectView(): Promise<TermHostClient> {
+    if (!this.supported || !(this.options.socketExists ?? existsSync)(this.socket))
+      return Promise.reject(new TermHostError('unavailable', 'no terminal host is running', true));
+    return (this.options.connect ?? connectTermHost)({
+      dataDir: this.options.dataDir,
+      timeoutMs: this.options.requestMs ?? 2_000,
+      clientName: 'agent-office-view',
+    });
   }
 
   /** Lets go of the control connection (the app quits: sessions keep running in the daemon). */

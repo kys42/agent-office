@@ -32,6 +32,9 @@ export interface ClientConnection {
   on(event: 'data', listener: (chunk: Buffer) => void): unknown;
   on(event: 'close', listener: () => void): unknown;
   on(event: 'error', listener: (error: Error) => void): unknown;
+  /** Stops and restarts reading (a `net.Socket`); a view behind its screen uses them. */
+  pause?(): unknown;
+  resume?(): unknown;
 }
 
 export class TermHostError extends Error {
@@ -155,6 +158,17 @@ export class TermHostClient {
 
   onClose(listener: Listener<[]>) {
     return subscribe(this.closes, listener);
+  }
+
+  /**
+   * Stops reading this connection while a view catches up, and starts again. The daemon then
+   * holds back, and past its limit replaces what this view missed with a fresh screen
+   * (`onResync`); the program itself never waits. Only for a connection that can pause.
+   */
+  pauseReading(paused: boolean) {
+    if (this.isClosed || typeof this.conn.pause !== 'function') return;
+    if (paused) this.conn.pause();
+    else this.conn.resume?.();
   }
 
   close() {

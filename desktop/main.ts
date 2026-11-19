@@ -24,6 +24,9 @@ import {
 import { runCommand } from '../server/adapters/claude-live.js';
 import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
+import { TermWindows } from './term-windows.js';
+import { TermViews } from './term-views.js';
+import { parseTermCommand, validTermInput } from '../src/shared/term-view.js';
 import { ReaderWindows } from './reader-windows.js';
 import {
   parseReaderTarget,
@@ -121,7 +124,8 @@ import {
   type Point,
   type Rect,
 } from '../src/shared/dock-geometry.js';
-import { TermBuiltin } from './term-builtin.js';
+import { TermBuiltin, builtinSupported } from './term-builtin.js';
+import type { SessionStats } from './term-host/protocol.js';
 import {
   defaultTerminalDeps,
   focusTerminal,
@@ -173,6 +177,7 @@ let main: BrowserWindow | null = null,
   quitting = false;
 let cards: CardWindows;
 let shellWindows: ShellWindows;
+let termWindows: TermWindows;
 let readerWindows: ReaderWindows;
 let notifier: Notifier;
 // The colleague card open in the big office, as its page reports it (notifications skip it).
@@ -214,11 +219,20 @@ else {
       secure,
       watch,
       // A preview card stays while the person works in a terminal or reader window it opened.
-      companion: () => !!shellWindows?.focused() || !!readerWindows?.focused(),
+      companion: () =>
+        !!shellWindows?.focused() || !!termWindows?.focused() || !!readerWindows?.focused(),
       material: () => cardMaterial(delivery.latest),
     });
     app.on('before-quit', () => cards.dispose());
     shellWindows = new ShellWindows({
+      index,
+      preload: path.join(__dirname, 'preload.cjs'),
+      dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
+      secure,
+      blurred: () => cards.recheck(),
+    });
+    // The built-in terminal's windows (#401): a view of one session each.
+    termWindows = new TermWindows({
       index,
       preload: path.join(__dirname, 'preload.cjs'),
       dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
@@ -269,6 +283,7 @@ else {
     const hidePopups = (s: Snapshot) => {
       if (!s.preferences?.privacy) return;
       shellWindows.closeAll();
+      termWindows.closeAll();
       readerWindows.closeAll();
     };
     // Settings › Look › Glass: cards on the clearer glass while the person set their own level.
@@ -349,6 +364,7 @@ else {
       if (dock && !dock.isDestroyed() && !drag) dock.setBounds(roomyBounds(dockMode));
       cards.reseat();
       shellWindows.reseat();
+      termWindows.reseat();
       readerWindows.reseat();
     };
     screen.on('display-removed', reseat);
@@ -811,6 +827,11 @@ function trustedReader(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFr
   if (readerWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
   trusted(e);
 }
+/** The built-in terminal's view IPC trusts its own windows only. */
+function trustedTerm(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
+  if (termWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
+  throw new Error(m().desktop.untrustedWindow);
+}
 /** The mini terminal's IPC also trusts its own windows (and nothing else does). */
 function trustedShell(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
   if (shellWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
@@ -961,6 +982,170 @@ function setupMiniShell() {
       return;
     }
     if (validShellInput(ptyId, data)) shells.write(e.sender.id, ptyId as string, data);
+  });
+}
+/** What runs in a built-in session, for its window's header: the agent and its folder. */
+const termTitle = (s: Pick<SessionStats, 'argv' | 'cwd'>) =>
+  `${path.basename(s.argv[0] ?? '')} · ${path.basename(s.cwd) || s.cwd}`;
+/**
+ * The built-in terminal's windows (#401, docs/development/TERM-HOST.md): each shows one session
+ * main chose (a jump, a launch), attached through a connection of its own only while it is shown.
+ * A window names nothing: it attaches, resizes, types into and ends only its own session.
+ */
+function setupBuiltinViews(builtin: TermBuiltin) {
+  const views = new TermViews({ connect: () => builtin.connectView() });
+  app.on('before-quit', () => views.dispose());
+  if (!builtinSupported()) return;
+  const watched = new WeakSet<Electron.WebContents>();
+  const watch = (sender: Electron.WebContents) => {
+    if (watched.has(sender)) return;
+    watched.add(sender);
+    const id = sender.id;
+    // A closed or reloaded window leaves its views behind: end them, keep the sessions.
+    sender.once('destroyed', () => views.detachOwner(id));
+    sender.on('did-start-loading', () => views.detachOwner(id));
+  };
+  const sinkFor = (sender: Electron.WebContents) => ({
+    data: (viewId: string, data: Uint8Array) => {
+      if (!sender.isDestroyed()) sender.send('office:term-data', viewId, data);
+    },
+    resync: (viewId: string, restore: string, cols: number, rows: number) => {
+      if (!sender.isDestroyed()) sender.send('office:term-resync', viewId, restore, cols, rows);
+    },
+    exit: (viewId: string, exit: { code: number | null; signal: number | null }) => {
+      if (!sender.isDestroyed())
+        sender.send('office:term-exit', viewId, { code: exit.code, signal: exit.signal });
+    },
+    lost: (viewId: string) => {
+      if (!sender.isDestroyed()) sender.send('office:term-lost', viewId);
+    },
+  });
+  /**
+   * "Go to its terminal" for a built-in session: its window, opened beside the window in front
+   * (or brought forward). Refused while screen content is hidden, or once the session is gone.
+   */
+  builtin.show = async (session) => {
+    if (delivery.latest?.preferences?.privacy) throw new TerminalFocusError(m().shell.term.hidden);
+    const stats = await builtin.session(session).catch(() => null);
+    if (!stats) throw new TerminalFocusError(m().shell.gone);
+    // Hidden while it was looked up: its title and folder never show after that.
+    if (delivery.latest?.preferences?.privacy) throw new TerminalFocusError(m().shell.term.hidden);
+    const from = BrowserWindow.getFocusedWindow() ?? main;
+    const anchor =
+      from && !from.isDestroyed() ? from.getBounds() : screen.getPrimaryDisplay().workArea;
+    termWindows.open(session, { session, title: termTitle(stats), cwd: stats.cwd }, anchor, {
+      float:
+        !!from &&
+        !from.isDestroyed() &&
+        popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+    });
+    return m().desktop.terminal.builtinOpened;
+  };
+  /**
+   * The office's conversations running in a built-in session (its folder's Claude and Codex,
+   * located as for a jump), for the end-it confirmation: which conversation's agent ends.
+   */
+  const conversationsIn = async (session: string, cwd: string) => {
+    const local = (delivery.latest?.sessions ?? [])
+      .filter(
+        (s) =>
+          !s.remote &&
+          !!s.cwd &&
+          path.resolve(s.cwd) === path.resolve(cwd) &&
+          ['claude', 'codex'].includes(s.provider),
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 20);
+    const names: string[] = [];
+    for (const s of local) {
+      const terminal =
+        s.provider === 'claude'
+          ? await locateTerminal(s.nativeId, { fresh: true }).catch(() => null)
+          : await findCodexTerminal(s.nativeId, { fresh: true }).catch(() => null);
+      if (terminal?.host.kind === 'builtin' && terminal.host.session === session)
+        names.push(s.alias || s.title);
+    }
+    return names;
+  };
+  ipcMain.handle('office:term-window', async (e, what: unknown) => {
+    trustedTerm(e);
+    if (what === 'target') return termWindows.target(e.sender);
+    if (what === 'close' || what === 'focus') return termWindows.action(e.sender, what);
+    if (what === 'top') return termWindows.onTop(e.sender);
+    if (what === 'top-on' || what === 'top-off')
+      return termWindows.setOnTop(e.sender, what === 'top-on');
+    throw new Error(m().desktop.badRequest);
+  });
+  ipcMain.handle('office:term', async (e, raw) => {
+    trustedTerm(e);
+    let command;
+    try {
+      command = parseTermCommand(raw);
+    } catch {
+      throw new Error(m().desktop.badRequest);
+    }
+    // A terminal never attaches while screen content is hidden.
+    if (delivery.latest?.preferences?.privacy && command.type === 'attach')
+      throw new Error(m().shell.term.hidden);
+    const owner = e.sender.id;
+    const { session } = termWindows.target(e.sender);
+    switch (command.type) {
+      case 'attach': {
+        // Its lifetime before the first await: a reload meanwhile makes this request stale.
+        watch(e.sender);
+        const since = views.epoch(owner);
+        return views.attach(
+          owner,
+          session,
+          { cols: command.cols, rows: command.rows },
+          sinkFor(e.sender),
+          since,
+        );
+      }
+      case 'resize':
+        return views.resize(owner, command.viewId, command.cols, command.rows);
+      case 'flow':
+        return views.flow(owner, command.viewId, command.paused);
+      case 'detach':
+        return views.detach(owner, command.viewId);
+      case 'kill': {
+        const stats = await builtin.session(session);
+        if (!stats) throw new Error(m().shell.gone);
+        const t = m().shell;
+        const names = await conversationsIn(session, stats.cwd);
+        const window = BrowserWindow.fromWebContents(e.sender);
+        const options = {
+          type: 'warning' as const,
+          title: t.term.killTitle,
+          message: t.term.killConfirm(names.join(', ')),
+          detail: [
+            `${t.term.agent}: ${path.basename(stats.argv[0] ?? '')}`,
+            `${t.folder}: ${stats.cwd}`,
+            `${t.term.command}: ${[path.basename(stats.argv[0] ?? ''), ...stats.argv.slice(1)].join(' ').slice(0, 300)}`,
+            '',
+            t.term.killDetail,
+          ].join('\n'),
+          buttons: [t.cancel, t.term.killButton],
+          defaultId: 0,
+          cancelId: 0,
+        };
+        const response = window
+          ? await dialog.showMessageBox(window, options)
+          : await dialog.showMessageBox(options);
+        if (response.response !== 1) return false;
+        // The person agreed to end that very session: still the same one now (ids are unique).
+        if (!(await builtin.session(session))) throw new Error(m().shell.gone);
+        return builtin.kill(session);
+      }
+    }
+  });
+  ipcMain.on('office:term-input', (e, viewId: unknown, data: unknown) => {
+    try {
+      trustedTerm(e);
+    } catch {
+      return;
+    }
+    if (validTermInput(viewId, data)) views.write(e.sender.id, viewId as string, data);
   });
 }
 /**
@@ -1361,6 +1546,7 @@ function setupIPC() {
   useBuiltinTerminals(builtinTerminals);
   // Its sessions keep running in the daemon: only this app's connection ends.
   app.on('before-quit', () => builtinTerminals.close());
+  setupBuiltinViews(builtinTerminals);
   /** Every launch of this app (#318): one core, one queue, one pending record. */
   const launchCore = new LaunchCore({
     destinations: {
@@ -1373,6 +1559,7 @@ function setupIPC() {
         binary: defaultResumeDeps.binary,
         version: cliVersion,
         directory: defaultResumeDeps.directory,
+        opened: (id) => void builtinTerminals.show?.(id).catch(() => undefined),
       }),
       terminalApp: terminalAppDestination(shellDeps),
       copy: copyDestination(shellDeps),

@@ -92,6 +92,40 @@ const api: OfficeAPI = {
           },
           window: (what: string, target?: unknown) => action('office:shell-window', what, target),
         } as OfficeAPI['shell'],
+        // The built-in terminal's window (#401): its own view only.
+        term: {
+          command: (command: unknown) => action('office:term', command),
+          input: (viewId: string, data: string) =>
+            ipcRenderer.send('office:term-input', viewId, data),
+          onData: (cb: (viewId: string, data: Uint8Array) => void) => {
+            const f = (_: unknown, viewId: string, data: Uint8Array) => cb(viewId, data);
+            ipcRenderer.on('office:term-data', f);
+            return () => ipcRenderer.removeListener('office:term-data', f);
+          },
+          onResync: (cb: (viewId: string, restore: string, cols: number, rows: number) => void) => {
+            const f = (_: unknown, viewId: string, restore: string, cols: number, rows: number) =>
+              cb(viewId, restore, cols, rows);
+            ipcRenderer.on('office:term-resync', f);
+            return () => ipcRenderer.removeListener('office:term-resync', f);
+          },
+          onExit: (
+            cb: (viewId: string, exit: { code: number | null; signal: number | null }) => void,
+          ) => {
+            const f = (
+              _: unknown,
+              viewId: string,
+              exit: { code: number | null; signal: number | null },
+            ) => cb(viewId, exit);
+            ipcRenderer.on('office:term-exit', f);
+            return () => ipcRenderer.removeListener('office:term-exit', f);
+          },
+          onLost: (cb: (viewId: string) => void) => {
+            const f = (_: unknown, viewId: string) => cb(viewId);
+            ipcRenderer.on('office:term-lost', f);
+            return () => ipcRenderer.removeListener('office:term-lost', f);
+          },
+          window: (what: string) => action('office:term-window', what),
+        } as OfficeAPI['term'],
       }
     : {}),
   // Orca is a macOS app: bringing it to the front is offered there only.

@@ -12,6 +12,7 @@ import { connectTermHost, type ConnectOptions } from '../desktop/term-host/clien
 import { termHostPaths } from '../desktop/term-host/endpoint';
 import { restoreSequence, type ExitInfo } from '../desktop/term-host/protocol';
 import { TermBuiltin } from '../desktop/term-builtin';
+import { TermViews } from '../desktop/term-views';
 import { findHost } from '../desktop/terminal-host';
 import { runCommand } from '../server/adapters/claude-live';
 
@@ -228,6 +229,24 @@ test(
         session: 'ao-real',
         label: path.basename(dataDir),
       });
+      // A window's view: the screen as it is, then what is typed shows up live.
+      const views = new TermViews({ connect: () => builtin.connectView() });
+      let live = '';
+      const view = await views.attach(
+        1,
+        'ao-real',
+        { cols: 80, rows: 10 },
+        {
+          data: (_id, data) => void (live += Buffer.from(data).toString('utf8')),
+          resync() {},
+          exit() {},
+          lost() {},
+        },
+      );
+      assert.match(await render(view.restore), /faint plain/);
+      views.write(1, view.viewId, 'via-view\r');
+      await waitFor(() => live.includes('via-view'), 'typed through the view');
+      views.detachOwner(1);
       await builtin.write('ao-real', 'typed-in\r');
       for (let i = 0; i < 100 && !screen.lines.some((l) => l === 'typed-in'); i++) {
         await sleep(20);

@@ -237,6 +237,11 @@ export interface BuiltinDestinationDeps {
   /** A new session's id (random when left out). */
   newId?: () => string;
   wait?: (ms: number) => Promise<void>;
+  /**
+   * A session just started for someone at this computer: its window opens (a first run may
+   * stop at a prompt, such as trusting the folder, that only the screen shows).
+   */
+  opened?: (sessionId: string) => void;
 }
 
 /** What a built-in terminal launch starts: its session, and the command shown to confirm it. */
@@ -351,7 +356,7 @@ export function builtinDestination(deps: BuiltinDestinationDeps): LaunchDestinat
         return { available: false, reason: (error as Error).message };
       }
     },
-    async start(_t, context) {
+    async start(t, context) {
       const plan = context.probe.detail as BuiltinPlan;
       context.authorized?.();
       let id: string;
@@ -375,6 +380,8 @@ export function builtinDestination(deps: BuiltinDestinationDeps): LaunchDestinat
       const now = await deps.terminals.sessions(true).catch(() => undefined);
       if (now !== undefined && !now?.sessions.some((s) => s.id === id))
         throw new Error(m().launch.builtinExited);
+      // A remote office's launch never brings anything to the front of this computer.
+      if (!t.background) deps.opened?.(id);
       return { state: 'launched', message: m().launch.builtinLaunched, command: plan.command };
     },
   };

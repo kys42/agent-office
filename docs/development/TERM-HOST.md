@@ -123,7 +123,13 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
   - 키는 tmux `send-keys`가 쓰는 것과 같은 바이트, 붙여넣기는 bracketed paste, Enter는 `\r`입니다.
   - 보내기 흐름(상태·전면 프로세스·화면 확인, 초안 보호, Enter 직전 재확인)은 tmux·Orca와 같은 코드를 탑니다.
   - 데몬에 닿지 못한 쓰기는 '보내지 않음'으로 알립니다.
-- **화면 보기**는 2b(카드·창의 xterm 뷰)에서 붙습니다. 그 전까지 "터미널로 이동"은 이유를 알립니다.
+- **화면 보기** (2b, `desktop/term-windows.ts`·`term-views.ts`, `src/components/TermWindow.tsx`·`TermPanel.tsx`):
+  - 세션마다 창 하나(`#term`, 미니 터미널 창과 같은 팝업 규칙)에 xterm을 둡니다. "터미널로 이동"(`office:jump` → `focusHost` → `show`)과 실행 직후(원격 실행 제외)에 그 창이 열립니다. 첫 실행이 폴더 신뢰 같은 확인에서 멈춰도 보이게 하려는 것입니다. 화면 내용 숨기기 중에는 열지 않고, 켜지면 닫습니다.
+  - 창은 세션을 고르지 못합니다. main이 연 창의 대상(`TermTarget`)만 attach하고, 명령은 `attach`·`detach`·`resize`·`flow`·`kill`뿐입니다(`parseTermCommand`).
+  - **창마다 데몬 연결 하나**를 씁니다. 같은 세션을 두 창이 봐도 서로 출력을 빼앗지 않고, 느린 창은 데몬의 흐름 제어(밀리면 멈춤 → 새 스냅샷)를 따로 받습니다. 창이 그리지 못한 출력이 쌓이면(`OutputFlow`) main이 그 연결 읽기만 멈춥니다(`pauseReading`). 프로그램은 멈추지 않습니다.
+  - attach: `restoreSequence`를 세션 크기의 새 xterm에 그린 뒤 창 크기로 맞춥니다. 크기를 한 번 흔들어(`nudgeSizes`: 다른 크기면 그 크기로, 같으면 한 줄 줄였다가 되돌림) SIGWINCH로 TUI가 다시 그리게 합니다. attach 응답보다 먼저 온 출력은 복원 화면 뒤에 그립니다. 기록은 200줄만 요청합니다.
+  - 창이 가려지면(최소화 등 `visibilitychange` hidden) detach하고, 다시 보이면 새로 attach합니다. 닫거나 새로고침해도 detach합니다. **보이지 않는 동안에는 아무것도 흐르지 않습니다.**
+  - 종료 버튼은 main의 확인창을 거칩니다. 확인창에는 끝날 대화(그 폴더의 Claude·Codex 중 이 세션에서 찾은 것), 에이전트, 폴더, 실행 중인 명령을 보여 줍니다. 확인 뒤 세션이 아직 있을 때만 kill합니다(SIGHUP 그룹 → 3초 뒤 SIGKILL).
 - **한계**
   - macOS의 `ps -E`는 Apple 플랫폼 바이너리(`/bin/cat` 등)의 환경을 보여 주지 않습니다. 에이전트 CLI(Claude·Codex·node)는 보입니다. tmux·Orca 인식도 같은 전제입니다.
   - Linux는 실행·답장 경로는 같지만, 프로세스 환경·tty 읽기(`ps -wwE`, `ttys…`)가 macOS 기준이라 인식이 되지 않을 수 있습니다(기존 Linux 한계와 같음). 그동안은 '시작 중' 예약만 중복 실행을 막습니다.
@@ -131,8 +137,10 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
 
 ## 한계와 다음 단계
 
-- 2b: 카드·창에 xterm 뷰(attach → `restoreSequence` → 크기 흔들기 → 실시간, 보이지 않으면 detach), "터미널로 이동", 종료 버튼.
-- serialize 밖의 상태(문자 집합, 저장된 커서, 탭 정지 등)는 복원하지 않습니다. 2단계에서 붙을 때 크기를 한 번 흔들어(SIGWINCH) TUI가 다시 그리게 할 계획입니다.
+- 업무 카드 안에 뷰를 넣는 것(창이 아닌 인라인 임베드)은 범위 밖입니다. 카드는 대화를 기록에서 보여 주고, 터미널 화면은 창에서 봅니다.
+- Windows(2b 이후 별도 이슈): 패키지에 node-pty, named pipe 강화, 자식 프로세스 트리 kill.
+- 3단계: 보지 않는 유휴 에이전트를 재우고 resume으로 깨우기. 미니 셸의 tmux를 이것으로 교체.
+- serialize 밖의 상태(문자 집합, 저장된 커서, 탭 정지 등)는 복원하지 않습니다. 대신 붙을 때 크기를 한 번 흔들어(SIGWINCH) TUI가 다시 그리게 합니다.
 - 스크롤 영역은 xterm 내부 값(`_core.buffer.scrollTop/scrollBottom`)을 읽습니다. 값이 없으면 복원을 건너뜁니다.
 - 옛 프로토콜 데몬의 세션은 새 앱에서 보이지 않습니다(버전별 소켓). 프로토콜을 바꿀 때 이전 방법을 정합니다.
 - Windows named pipe는 이름이 예측 가능하므로, 누가 먼저 같은 이름을 차지하면 토큰이 새어 나갈 수 있습니다. 또 Windows 패키지에는 아직 node-pty가 없습니다.

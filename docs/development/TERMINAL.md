@@ -98,6 +98,7 @@ terminal_title = ["session-id", "thread-name", "project"]
   - 클라이언트가 있으면 가장 최근에 쓴 클라이언트를 `switch-client -c <tty>`로 그 패널에 옮기고, 클라이언트 PID에서 부모를 따라 올라가 처음 만나는 `.app` 번들(Terminal·Ghostty·Orca 등)을 찾는다. 그 클라이언트가 보이는 창·탭을 고를 수 있으면 고른다: Orca는 클라이언트 환경의 `ORCA_TERMINAL_HANDLE`(+`ORCA_TAB_ID`)을 `orca terminal list`에서 확인한 뒤 `orca terminal switch`(원격 선택 변수 제거) 후 `open -a Orca`, Terminal·iTerm2는 AppleScript로 `tty`가 클라이언트 tty와 같은 탭(iTerm2는 세션)을 선택한다(tty는 argv로만 넘김). 그 밖의 앱이거나 찾지 못하면 `open -a`로 앱만 앞으로 가져오고, 창·탭은 고르지 못했다고 사실대로 알린다.
   - 앱을 못 찾으면(ssh, 데몬 서버 등) "패널은 바꿨지만 창을 앞으로 가져오지 못했다"고 알린다.
   - 클라이언트가 없으면(앱이 분리 상태로 띄운 `agent-office` 세션 등) macOS에서는 Terminal을 열어 `attach-session`으로 붙인다(명령은 osascript 인자로만 넘김). 다른 OS는 붙일 명령을 안내하고 실패로 알린다.
+- 내장 터미널(#401): 그 세션의 터미널 창을 앱이 직접 연다(이미 열려 있으면 앞으로). 화면 내용 숨기기 중이거나 세션이 끝났으면 이유를 알린다. [TERM-HOST.md](TERM-HOST.md#앱에서-쓰기-2단계-401).
 - 대상이 없으면 기존 동작: Codex 링크 열기, 그 외 재개 명령 복사.
 
 ## 바로 보내기 (기본 켜짐)

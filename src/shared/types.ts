@@ -1175,6 +1175,42 @@ export interface OfficeAPI {
       (action: PopupOnTopAction): Promise<boolean>;
     };
   };
+  /**
+   * Desktop (macOS/Linux) only (#401): a built-in terminal window's view of its own session.
+   * The window never names a session: main attaches the one it opened the window for.
+   */
+  term?: {
+    command: <C extends import('./term-view').TermCommand>(
+      command: C,
+    ) => Promise<
+      C['type'] extends 'attach'
+        ? import('./term-view').TermAttachment
+        : C['type'] extends 'kill'
+          ? boolean
+          : void
+    >;
+    /** Keystrokes for this window's own view. */
+    input: (viewId: string, data: string) => void;
+    onData: (cb: (viewId: string, data: Uint8Array) => void) => () => void;
+    /** The view fell behind: clear it and draw this screen instead, taken at `cols`×`rows`. */
+    onResync: (
+      cb: (viewId: string, restore: string, cols: number, rows: number) => void,
+    ) => () => void;
+    onExit: (
+      cb: (viewId: string, exit: { code: number | null; signal: number | null }) => void,
+    ) => () => void;
+    /** The view's connection to the daemon closed without the session ending. */
+    onLost: (cb: (viewId: string) => void) => () => void;
+    /**
+     * The window itself: `target` reads what it shows, `focus` takes the keyboard, `close`
+     * closes it (detaching). `top` reads whether it stays on top and `top-on`/`top-off` set it.
+     */
+    window: {
+      (action: 'target'): Promise<import('./term-view').TermTarget>;
+      (action: 'close' | 'focus'): Promise<void>;
+      (action: PopupOnTopAction): Promise<boolean>;
+    };
+  };
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;

@@ -143,6 +143,7 @@ export const desktop = {
       `Sent to ${host}, and a permission prompt opened right after. Check the terminal.`,
     tmuxSent: (label: string) => `Sent to tmux ${label}`,
     builtinSent: (label: string) => `Sent to the built-in terminal ${label}`,
+    builtinOpened: 'Opened its built-in terminal window',
     builtinUnreachable: "Couldn't reach the built-in terminal, so nothing was sent.",
     builtinNoView:
       "The built-in terminal's screen can't be shown here yet. The conversation runs in the app's own terminal.",
