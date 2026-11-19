@@ -114,6 +114,19 @@ test('the office floats a big way back to the dock look it was left in', async (
   expect(await overlapsAny(button, '.office-list-footer > *')).toBe(false);
   await page.getByRole('button', { name: '그래픽', exact: true }).click();
 
+  // A popup from the office (a desk's quick reply, a menu, the past-colleagues list) lives in
+  // the office card's own layer and could not rise over the pill: the pill steps aside while
+  // one is open (composer-draft and residents specs drive the real ones).
+  await page.evaluate(() => {
+    const pop = document.createElement('div');
+    pop.className = 'quick-reply';
+    pop.id = 'stub-pop';
+    document.querySelector('.office-card')!.appendChild(pop);
+  });
+  await expect(button).toBeHidden();
+  await page.evaluate(() => document.getElementById('stub-pop')!.remove());
+  await expect(button).toBeVisible();
+
   // Only on the office view: other tabs keep their content clear.
   await page.getByRole('button', { name: '기억 서랍', exact: true }).click();
   await expect(button).toHaveCount(0);

@@ -538,6 +538,12 @@ body.is-mac .sidebar-top .brand {
 .office-column:has(> .office-return-button) > .session-room {
   padding-bottom: 64px;
 }
+/* The office card is its own stacking layer, so its popups (a desk's quick reply, the hidden
+   and past colleagues list, menus) cannot rise over the pill: it steps aside while one is open. */
+.office-column:has(details[open], .quick-reply, [role='menu']) > .office-return-button {
+  visibility: hidden;
+  opacity: 0;
+}
 /* A toast rises above the pill instead of covering it. */
 .app:has(.office-return-button) .toast {
   bottom: 84px;
