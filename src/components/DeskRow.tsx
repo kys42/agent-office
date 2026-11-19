@@ -177,8 +177,9 @@ export function DeskRow({
   const sceneHeight = tiny ? TINY_SCENE_HEIGHT : floor ? FLOOR_SCENE_HEIGHT : ROW_SCENE_HEIGHT;
   const scale = tiny ? TINY_SCALE : ROW_SCALE;
   const benchY = top + 134;
-  // Office: helpers beside their colleague's desk, table at desk height. Floor: on the floor.
-  const helperY = floor ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + HELPER_TOP;
+  // Office: helpers beside their colleague's desk, table at desk height. Floor and tiny: on the
+  // floor — tiny draws no zone floor, so a desk-height table would hang in the air.
+  const helperY = floor || tiny ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + HELPER_TOP;
   const track = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<string | null>(null);
   // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.

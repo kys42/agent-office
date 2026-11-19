@@ -903,3 +903,15 @@ test('Tiny zone stops in privacy name only the project', async ({ page }) => {
   await expect(page.getByRole('button', { name: /team-a/ })).toHaveCount(0);
   await expect(zoneKey(page, 0)).not.toHaveAttribute('title', /team-a/);
 });
+
+test('Tiny helper desks stand on the floor from the row as from the floor', async ({ page }) => {
+  // Tiny has no zone floor, so the row's desk-height helper table would float above the desks.
+  const bottoms: number[] = [];
+  for (const hash of ['#mini=row&tiny', '#mini=floor&tiny']) {
+    await page.goto('about:blank');
+    await setup(page, hash, { bridge: true, helpers: 5 });
+    const box = (await page.locator('.desk-row .helper-stack').boundingBox())!;
+    bottoms.push(box.y + box.height);
+  }
+  expect(Math.abs(bottoms[0] - bottoms[1])).toBeLessThan(4);
+});
