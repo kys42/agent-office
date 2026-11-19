@@ -73,7 +73,8 @@ import { useI18n } from './lib/i18n';
 import { useDockLook } from './lib/useDockLook';
 import { dockLookName } from './shared/dock-look';
 import { cardReadSettings } from './shared/card-reads';
-import { resetDue } from './shared/view-prefs';
+import { resetDue, resolveViews } from './shared/view-prefs';
+import { OfficeReturnButton } from './components/OfficeReturnButton';
 // Labels live in the `app.tabs` catalog so they follow a language switch.
 const tabs = [
   { id: 'office', icon: Home },
@@ -85,7 +86,8 @@ const tabs = [
 export default function App() {
   const { locale, t } = useI18n();
   // The dock button names the look the dock goes back to (pet, desk row, floor, tiny).
-  const dockLabel = t.dock.view.looks[dockLookName(useDockLook())];
+  const dockLook = useDockLook();
+  const dockLabel = t.dock.view.looks[dockLookName(dockLook)];
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
   const [guide, setGuide] = useState<'tour' | 'features' | null>(() =>
     new URLSearchParams(location.search).has('onboarding') || (!demo && !hasSeenOnboarding(false))
@@ -1081,6 +1083,12 @@ export default function App() {
                 if (!sessions.find((s) => s.id === id)?.remote) setAreaDrop({ id, zone });
               }}
               onReorder={(ids) => void reorderSeats(ids)}
+              floating={
+                // The desktop app's big way back to the dock (a browser has no dock).
+                isDesktop && !demo && resolveViews(prefs?.views).office.returnButton ? (
+                  <OfficeReturnButton look={dockLook} onReturn={() => void api.window('mini')} />
+                ) : undefined
+              }
             />
           ) : view === 'memory' ? (
             <Memory

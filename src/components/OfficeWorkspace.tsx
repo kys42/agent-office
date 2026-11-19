@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { zoneLabel } from '../shared/zones';
 import { officeLabel } from '../shared/rooms';
@@ -67,6 +67,7 @@ export function OfficeWorkspace({
   onReorder,
   onReply,
   notify,
+  floating,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -97,6 +98,8 @@ export function OfficeWorkspace({
   onReorder?: (ids: string[]) => void;
   onReply?: ReplySender;
   notify?: (message: string) => void;
+  /** Floats over the bottom of the office column (the desktop app's way back to the dock). */
+  floating?: ReactNode;
 }) {
   const { t } = useI18n();
   const key = `office:view:${demo ? 'demo' : 'live'}`;
@@ -481,6 +484,7 @@ export function OfficeWorkspace({
             )}
           </section>
         )}
+        {floating}
       </div>
       {!listView && (
         <Roster

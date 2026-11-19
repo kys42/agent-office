@@ -458,6 +458,90 @@ body.is-mac .sidebar-top .brand {
   background: var(--accent);
   border-color: var(--accent);
 }
+
+/* The big office's floating way back to the dock: a large translucent pill at the bottom
+   center of the office column (never over the roster, the card or the usage dock). In the
+   graphic view it rides above the stage's bottom HUD (status pills, zoom controls); the list and
+   the rooms keep room under their last row for it. */
+.office-column {
+  position: relative;
+}
+.office-return-button {
+  position: absolute;
+  left: 50%;
+  /* Column padding 14 + HUD inset 12 + HUD row 28 + gap 10. */
+  bottom: 64px;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 42px;
+  max-width: calc(100% - 32px);
+  padding: 0 20px 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  /* See-through without a backdrop blur: the office moves under it all the time (see the HUD). */
+  background: color-mix(in srgb, var(--bg-1) 80%, transparent);
+  box-shadow: var(--shadow-pop);
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+  opacity: 0.86;
+  transform: translateX(-50%);
+  transition:
+    opacity 0.15s,
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+.office-return-button span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.office-return-button:hover,
+.office-return-button:focus-visible {
+  opacity: 1;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.office-return-button:hover {
+  transform: translateX(-50%) translateY(-1px);
+}
+.office-return-button:active {
+  transform: translateX(-50%) scale(0.98);
+}
+.office-return-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.office-return-button .office-return-icon {
+  flex-shrink: 0;
+}
+/* The shrink mark sits on the pill's own colour (the dock's dark pill colour reads wrong here). */
+.office-return-button .dock-view-tiny-mark {
+  background: var(--bg-0);
+}
+.office-return-button:hover .dock-view-tiny-mark,
+.office-return-button:focus-visible .dock-view-tiny-mark {
+  color: var(--accent);
+  background: var(--accent-ink);
+}
+/* The list's own footer (hidden and past colleagues) stays clear below it when it has any. */
+.office-column:has(> .office-list-footer:empty) > .office-return-button,
+.office-column:has(> .session-room) > .office-return-button {
+  bottom: 26px;
+}
+.office-column:has(> .office-return-button) .office-list-scroll,
+.office-column:has(> .office-return-button) > .session-room {
+  padding-bottom: 64px;
+}
+/* A toast rises above the pill instead of covering it. */
+.app:has(.office-return-button) .toast {
+  bottom: 84px;
+}
 .mini-button:active {
   background: var(--accent-2);
 }

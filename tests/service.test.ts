@@ -210,9 +210,17 @@ test('Screen choices (#324) save mode by mode, merge deeply, and refuse unknown 
       tiny: { effects: false, tally: false },
       dock: { tally: false },
     });
+    // The big office's way back to the dock: saved beside its desk choices.
+    assert.deepEqual((await call({ office: { returnButton: false } }))?.office, {
+      branch: false,
+      returnButton: false,
+    });
     // A patch without views leaves them as they are.
     await service.call('preferences', [{ tinyNames: false }]);
-    assert.deepEqual(service.store.preferences().views?.office, { branch: false });
+    assert.deepEqual(service.store.preferences().views?.office, {
+      branch: false,
+      returnButton: false,
+    });
     for (const bad of [
       { pet: { tallyGroups: ['resting'] } },
       { pet: { tallyGroups: ['attention', 'results', 'working', 'standby', 'attention'] } },
@@ -225,6 +233,8 @@ test('Screen choices (#324) save mode by mode, merge deeply, and refuse unknown 
       { tiny: { tally: 1 } },
       { tiny: { branch: false } },
       { office: { hideRead: false } },
+      { office: { returnButton: 'on' } },
+      { dock: { returnButton: false } },
       { card: { tally: true } },
     ])
       await assert.rejects(service.call('preferences', [{ views: bad }]), JSON.stringify(bad));

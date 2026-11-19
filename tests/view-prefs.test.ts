@@ -311,7 +311,8 @@ test('missing screen choices are the look from before', () => {
     // The row's, floor's and tiny's pills count like the pet by default too.
     dock: { ...desk, hideRead: true, tally: true },
     tiny: { effects: true, tally: true },
-    office: desk,
+    // The big office's floating way back to the dock shows unless switched off.
+    office: { ...desk, returnButton: true },
   };
   assert.deepEqual(resolveViews(undefined), defaults);
   assert.deepEqual(resolveViews({}), defaults);
@@ -345,7 +346,16 @@ test('screen choices resolve per mode; nonsense falls back to the default', () =
   const off = resolveViews({ dock: { tally: false } });
   assert.equal(off.tiny.tally, true);
   assert.equal(off.pet.tally, true);
-  assert.deepEqual(v.office, { branch: true, papers: false, beacon: false, focus: true });
+  assert.deepEqual(v.office, {
+    branch: true,
+    papers: false,
+    beacon: false,
+    focus: true,
+    returnButton: true,
+  });
+  assert.equal(resolveViews({ office: { returnButton: false } }).office.returnButton, false);
+  // Only an explicit false hides it (an old or hand-edited store keeps it).
+  assert.equal(resolveViews({ office: { returnButton: 'no' as never } }).office.returnButton, true);
   // Unknown groups and names from an old or hand-edited store.
   assert.deepEqual(tallyGroups(['results', 'nope', 'results']), ['results']);
   assert.deepEqual(tallyGroups('all'), [...PET_TALLY_GROUPS]);

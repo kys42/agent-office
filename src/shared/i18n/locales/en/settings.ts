@@ -170,6 +170,9 @@ export const settings = {
       chatOutputs: 'Outputs in the chat',
       chatOutputsHint:
         'A small chip under the message that made a file. Click to preview it or open it in its app.',
+      returnButton: 'Back-to-dock button',
+      returnButtonHint:
+        'A large button floats at the bottom of the office to go back to the dock as you left it.',
     },
   },
   /** Reading final replies by opening a card (#228). */

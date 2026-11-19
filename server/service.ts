@@ -153,7 +153,10 @@ const viewsSchema = z
       .object({ effects: z.boolean().optional(), tally: z.boolean().optional() })
       .strict()
       .optional(),
-    office: z.object(deskViewShape).strict().optional(),
+    office: z
+      .object({ ...deskViewShape, returnButton: z.boolean().optional() })
+      .strict()
+      .optional(),
   })
   .strict();
 const prefsSchema = z

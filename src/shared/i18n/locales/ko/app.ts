@@ -46,6 +46,16 @@ export const app: Messages['app'] = {
     miniTitle: (look) =>
       `바탕화면 데스크로 돌아가기 · 두고 온 모양: ${look} · 모양은 보기 버튼에서 바꿔요`,
   },
+  returnButton: {
+    label: {
+      pet: '데스크 펫으로 돌아가기',
+      row: '책상 줄로 돌아가기',
+      floor: '바닥으로 돌아가기',
+      tinyRow: '쪼꼬미 줄로 돌아가기',
+      tinyFloor: '쪼꼬미 바닥으로 돌아가기',
+    },
+    title: '큰 사무실을 접고 두고 온 바탕화면 데스크로 돌아가요',
+  },
   demoBanner: {
     text: '구경하는 사무실 · 모든 기록은 예시 데이터예요',
     exit: '실제 동료 만나기',
