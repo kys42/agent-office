@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { closeMiniShell, openMiniShell } from '../lib/miniShell';
 import { OnTopButton, usePopupOnTop } from './WindowPin';
+import { termOptions, useTermChrome } from './TermChrome';
 import {
   clampCols,
   clampRows,
@@ -39,6 +40,7 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
   const [othersOpen, setOthersOpen] = useState(false);
   const [round, setRound] = useState(0);
   const fitRef = useRef<() => void>(() => {});
+  const chrome = useTermChrome();
   // This terminal window's own on-top toggle (desktop/popup-windows.ts `setOnTop`).
   const onTop = usePopupOnTop(shell.window);
 
@@ -61,20 +63,11 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
     setError('');
     setNote('');
     setAttachment(null);
-    const term = new XTerm({
-      fontFamily: '"JetBrains Mono", Menlo, Monaco, monospace',
-      fontSize: 12,
-      lineHeight: 1.15,
-      cursorBlink: true,
-      scrollback: 1000,
-      macOptionIsMeta: true,
-      macOptionClickForcesSelection: true,
-      allowProposedApi: false,
-      theme: { background: '#1c1c1e', foreground: '#e5e5ea', cursor: '#e5e5ea' },
-    });
+    const term = new XTerm(termOptions(1000));
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
+    const unbind = chrome.bind(term, () => fitRef.current());
     /**
      * Fits the view, but never past the PTY's limits: xterm is resized to exactly the size that
      * is sent, so the screen and tmux always agree.
@@ -165,6 +158,7 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
       offExit();
       input.dispose();
       if (ptyId) void shell.command({ type: 'detach', ptyId }).catch(() => {});
+      unbind();
       term.dispose();
     };
     // `round` restarts a shell that ended; the target picks the folder or shell.
@@ -275,6 +269,7 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
       </header>
       <div className="mini-shell-body">
         <div ref={host} className="mini-shell-term" />
+        {chrome.ui}
         {status === 'connecting' && (
           <p className="mini-shell-state">
             <LoaderCircle size={14} className="now-spin" /> {t.shell.connecting}

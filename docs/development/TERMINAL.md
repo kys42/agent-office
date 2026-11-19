@@ -604,6 +604,20 @@ tmux는 원격의 전용 `agent-office` 서버에 만들고, 같은 폴더·종�
 - 셸 출력의 알림/사무실 연출 연결, 원격 오피스의 미니 터미널, Windows(ConPTY) 지원.
 
 
+### Mac 터미널처럼 쓰기 (미니·내장 터미널 공통, 2026-11-19)
+
+두 터미널 창(`MiniShellPanel`·`TermPanel`)은 `src/components/TermChrome.tsx`(`termOptions`·`useTermChrome`) 하나를 같이 쓴다. 패널은 xterm을 만들고 `bind(term, refit)`만 부르며, 보내는 바이트는 모두 패널의 기존 `onData` → `splitInput` → input 경로로 나간다(키는 `term.input(seq, true)`, 붙여넣기·드롭은 `term.paste`).
+
+- **편집 키(macOS만)**: 순수 함수 `src/shared/term-keys.ts` `macTermKey`. xterm 6은 Option+←/→를 `ESC[1;3D`/`ESC[1;3C`로 보내 zsh·Claude Code 입력창이 단어 이동으로 읽지 않으므로 readline 키로 바꾼다 — Option+←/→ `ESC b`/`ESC f`, ⌘+←/→ `^A`/`^E`, Option+⌫ `ESC DEL`, ⌘+⌫ `^U`, Option+⌦ `ESC d`. keydown만, IME 조합 중(`isComposing`·keyCode 229)과 Shift/Ctrl이 섞이면 xterm에 맡긴다. Shift+Enter는 손대지 않는다(xterm 기본).
+- **⌘ 단축키** (`termShortcut`): ⌘C·⌘V는 xterm이 아무것도 보내지 않게만 하고 앱 메뉴의 복사·붙여넣기 역할이 xterm 자신의 copy/paste 처리로 간다(선택 복사, bracketed paste 유지, 두 번 붙지 않음). 선택이 없을 때 ⌘C는 아무 일도 하지 않는다(^C 아님). ⌘F 찾기(`@xterm/addon-search`, Enter/Shift+Enter 다음·이전, Esc 닫기), ⌘A 모두 선택, ⌘= / ⌘- / ⌘0 글자 크기.
+- **글자 크기**: `src/lib/termFont.ts`가 localStorage `office:term-font-size`(9–28px, 기본 12)에 둔다. 모든 창이 같은 출처라 다른 터미널 창·설정 창에도 `storage` 이벤트로 바로 반영되고, 바뀌면 다시 맞춰 크기를 보낸다. 설정 › 일반 › 터미널과 답하기 › 터미널 글자 크기에서도 고른다.
+- **링크**: `@xterm/addon-web-links`. macOS는 ⌘-클릭(Terminal·iTerm2 관례)으로, `webLink`(http/https만) 확인 뒤 `window.open` → main `setWindowOpenHandler` → `shell.openExternal`.
+- **오른쪽 클릭 메뉴**: 렌더러 메뉴(복사·붙여넣기·모두 선택·선택 해제)로 Electron 기본 메뉴를 대신한다. 복사는 `execCommand('copy')`(xterm copy 처리), 붙여넣기는 `office.termView.paste()` → main `office:term-paste`가 그 창(미니·내장 터미널 창만)에 `webContents.paste()` — 페이지가 클립보드를 읽지 않는다(Electron에서 렌더러의 `execCommand('paste')`는 막혀 있음, 확인함).
+- **파일 드롭**: preload `office.termView.pathForFile`(`webUtils.getPathForFile`) → `shellQuotePaths`(작은따옴표, `'`는 `'\''`, 공백 구분, 끝에 공백 하나) → `term.paste`.
+- **유니코드 폭**: `@xterm/addon-unicode11`(`unicode.activeVersion = '11'`)로 한글·이모지 폭을 Claude TUI와 맞춘다. 이 애드온과 검색 강조가 proposed API라 `allowProposedApi: true`.
+- 애드온 버전은 `@xterm/xterm` 6.0.0과 같은 날 나온 것으로 고정(search 0.16.0, web-links 0.12.0, unicode11 0.9.0). 지연 로드 터미널 청크에만 들어간다(+약 25KB gzip).
+- 테스트: `tests/term-keys.test.ts`(매핑·경로 따옴표·글자 크기), `tests/ui/term-keys.spec.ts`(Mac UA로 두 창의 키·찾기·글자 크기·메뉴·드롭·⌘-클릭).
+
 ## 전송 확인의 연속성
 
 성공한 전송은 원본 transcript에 대응될 때까지 대화에 로컬 확인으로 남는다. 카드/앱 재시작과 여러 창을 지원하며 동일 원본 요청 하나가 반복 전송 두 개를 지우지 않는다. 저장하는 것은 식별자·시각·이미지 장수와 SHA-256 지문이며, 요청 본문이나 첨부 파일 경로를 추가로 보관하지 않는다. 다른 창/재시작 뒤에는 본문 없는 전송 확인을 보여 준다. 확인 표시는 30분 유효/50건 한도이며 다음 조회·시작 때 만료 정리한다. 숨기기는 확인 표시만 지우며, 실제 에이전트 전송 취소나 재전송을 뜻하지 않는다. WebCrypto가 없는 환경에서는 재시작 후 원본 대응을 추측하지 않는다.

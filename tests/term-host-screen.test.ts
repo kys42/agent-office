@@ -87,3 +87,12 @@ test('a screen read waits for a synchronized frame to finish, up to the limit', 
   client.close();
   await t.host.shutdown();
 });
+
+test('the daemon screen uses Unicode 11 widths like the view, so emoji stay two cells', async () => {
+  const screen = new HeadlessScreen(20, 2, 10);
+  // Column 3 is right after a two-cell emoji: X replaces 'a' as it does in the live view.
+  screen.write(Buffer.from('😀abc\x1b[1;3HX'), 1);
+  await parsed(screen);
+  assert.equal(screen.read().lines[0], '😀Xbc');
+  screen.dispose();
+});

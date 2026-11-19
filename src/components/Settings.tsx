@@ -20,6 +20,7 @@ import {
   LayoutGrid,
   Terminal,
   SquareTerminal,
+  ALargeSmall,
   Languages,
   X,
   Pencil,
@@ -81,6 +82,8 @@ import { projectKey } from '../shared/office';
 import { LOCALES, type LocalePreference } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
 import { isWindows } from '../lib/platform';
+import { setTermFontSize, useTermFontSize } from '../lib/termFont';
+import { TERM_FONT } from '../shared/term-keys';
 import { isDesktop } from '../lib/api';
 import { notifyPreferences } from '../shared/notify-plan';
 import { cardReadSettings } from '../shared/card-reads';
@@ -253,6 +256,7 @@ export function Settings({
   const { t } = useI18n();
   const s = t.settings;
   const p = snapshot.preferences;
+  const termFont = useTermFontSize();
   const view = viewPrefs(p);
   const text = textPrefs(p);
   const read = cardReadSettings(p);
@@ -536,6 +540,29 @@ export function Settings({
                   onPrefs({ builtinTerminal: !snapshot.preferences?.builtinTerminal })
                 }
               />
+            </div>
+          )}
+          {terminalSend !== undefined && !isWindows && (
+            <div className="setting-row" data-setting="term-font-size">
+              <ALargeSmall size={18} />
+              <div>
+                <b>{s.termFontSize}</b>
+                <p>{s.termFontSizeHint}</p>
+              </div>
+              <select
+                aria-label={s.termFontSize}
+                value={termFont}
+                onChange={(e) => setTermFontSize(Number(e.target.value))}
+              >
+                {Array.from(
+                  { length: TERM_FONT.max - TERM_FONT.min + 1 },
+                  (_, i) => TERM_FONT.min + i,
+                ).map((px) => (
+                  <option key={px} value={px}>
+                    {px}px
+                  </option>
+                ))}
+              </select>
             </div>
           )}
           {terminalSend !== undefined && (

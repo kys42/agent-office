@@ -1,5 +1,6 @@
 import serializeModule from '@xterm/addon-serialize';
 import headlessModule, { type Terminal } from '@xterm/headless';
+import unicode11Module from '@xterm/addon-unicode11';
 import { EscapeTail } from './escape-tail.js';
 import { ModeTracker, kittyStackSequence, modeSequences, type TerminalModes } from './modes.js';
 import type { ScreenRead, ScreenRestore } from './protocol.js';
@@ -27,6 +28,7 @@ const ALT_SCREEN_SWITCH = '\x1b[?1049h\x1b[H';
 // Both packages are CommonJS bundles whose exports Node's ESM loader cannot name statically.
 const { SerializeAddon } = serializeModule;
 const { Terminal: HeadlessTerminal } = headlessModule;
+const { Unicode11Addon } = unicode11Module;
 
 /** One session's headless terminal: what the program has drawn, and in which input modes. */
 export class HeadlessScreen {
@@ -53,6 +55,10 @@ export class HeadlessScreen {
       logLevel: 'off',
     });
     this.terminal.loadAddon(this.serializer);
+    // Same cell widths as the view (TermChrome): emoji and wide text land in the same columns
+    // live and in a restored screen.
+    this.terminal.loadAddon(new Unicode11Addon());
+    this.terminal.unicode.activeVersion = '11';
     this.modeTracker = new ModeTracker(this.terminal);
     this.terminal.onTitleChange((title) => void (this.title = title));
     // Answers to the program's queries (cursor position, device attributes, ...).

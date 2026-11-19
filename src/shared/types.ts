@@ -1215,6 +1215,17 @@ export interface OfficeAPI {
     };
   };
 
+  /**
+   * Desktop (macOS/Linux) only: what the two terminal windows (mini and built-in) need beyond
+   * their own view. `paste` pastes the clipboard where the window's keyboard is (main's own
+   * paste, so the page never reads the clipboard); `pathForFile` is a dropped file's path ('' if
+   * it has none).
+   */
+  termView?: {
+    paste: () => Promise<void>;
+    pathForFile: (file: File) => string;
+  };
+
   /** Desktop only: where each session can take a follow-up, if that can be verified. */
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
   /** Desktop only: focus the live terminal, or fall back to resume. */
