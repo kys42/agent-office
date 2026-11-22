@@ -111,7 +111,7 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 다음 보호�
 | Deployment branches and tags | Selected branches: **branch `main` 하나만**. 태그/와일드카드 없음. |
 | Secrets 위치 | 아래 다섯 개 모두 **environment secrets**. repository/organization 범위로 복제하지 않는다. |
 
-저장소 관리자와 소유자는 정책 자체를 변경할 수 있다. 이 구성은 저장소 소유자 계정 탈취를 방어하거나 같은 계정의 사람과 자동화 도구를 구별하는 별도 인증 장치가 아니다. 다른 서버에는 해당 저장소의 workflow 실행/조회에 필요한 최소 GitHub 권한만 주고 Apple 키는 두지 않는다. AI 에이전트는 빌드를 요청해도 environment 승인을 대신 처리하지 않는다. 승인자는 run의 source SHA와 변경된 workflow·빌드 스크립트·의존성을 확인한다. 공개 저장소의 artifact와 로그는 공개될 수 있으므로 사용자 세션·비밀값은 산출물에 포함하지 않는다.
+저장소 관리자와 소유자는 정책 자체를 변경할 수 있다. 이 구성은 저장소 소유자 계정 탈취를 방어하거나 같은 계정의 사람과 자동화 도구를 구별하는 별도 인증 장치가 아니다. 다른 서버에는 해당 저장소의 workflow 실행/조회에 필요한 최소 GitHub 권한만 주고 Apple 키는 두지 않는다. 2026-11-23 소유자는 이 저장소의 main macOS 서명 빌드에 한해 에이전트의 environment 승인 대행을 명시적으로 허용했다. 승인 전 요청된 source SHA, workflow·빌드 스크립트·의존성 변경, Linux 검증 성공, 실행자 kys42, main 전용 environment와 reviewer/bypass 보호 유지 여부를 확인한다. 기존 소유자 계정으로 승인하여 GitHub 감사 기록을 남기며 보호 규칙을 제거하지 않는다. Apple 법적 계약 동의는 이 위임에 포함하지 않는다. 공개 저장소의 artifact와 로그는 공개될 수 있으므로 사용자 세션·비밀값은 산출물에 포함하지 않는다.
 
 현재 공개 저장소에서는 required reviewer 보호를 사용할 수 있다. 비공개 전환이나 GitHub 요금제 변경 시 같은 보호가 계속 지원되는지 먼저 확인한다. 지원되지 않는 경우 보호를 없애고 진행하지 말고 서명 경로를 중단한다. [GitHub environment 보호 규칙](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
 
@@ -191,3 +191,7 @@ Electron의 같은 실행 파일을 여러 앱이 공유하면 bundle ID가 달�
 my-service-management의 native CI 비용 분리와 application golden 중 시작·복구(APP-01), 입력·영속 저장(APP-02), 수동 OS 설치 및 복구(APP-03), 최종 OS 산출물 검수(APP-07)를 적용했다. 구현 범위는 preview 및 정식 서명/공증 경로·검증·artifact 전달이다. 자격증명 등록과 실제 공증 완료 여부는 실행별 근거로 판단한다. 공개 배포와 자동 업데이트는 후속이다. 구체적인 실행 결과는 [QA 기록](QA.md)에 날짜와 환경을 적고, 작업 상태는 Notion 프로젝트 작업 보드에서 관리한다.
 
 runner 기준: [GitHub hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners). 서명·공증 기준: [Electron distribution](https://www.electronjs.org/docs/latest/tutorial/distribution-overview).
+
+### CI 키체인 검증
+
+일회용 macOS runner는 임시 키체인을 사용자 검색 목록에 등록한 뒤 P12를 가져오고 codesign partition ACL을 설정한다. 명시적인 `--keychain`으로 인증서 조회에 성공해도 검색 목록에 없으면 서명 시 개인키를 찾지 못할 수 있다. 앱 빌드 전에 복사한 실행 파일에 실제 Developer ID 서명·타임스탬프·검증을 수행하고 즉시 제거한다. 임시 P12/P8/검증 파일은 실패 시에도 정리하고 키체인은 workflow의 always 단계에서 삭제한다. 이 검색 목록 변경은 장기 사용 중인 개인 Mac에서 실행하지 않는다. [GitHub 공식 키체인 설정 예제](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications).
