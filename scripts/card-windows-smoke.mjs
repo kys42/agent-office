@@ -285,7 +285,11 @@ try {
   const pinnedAt = await bounds(b);
   await app.close();
   app = await launch();
-  const restarted = await app.firstWindow();
+  // Restored pinned cards can load before the office. firstWindow() can return the
+  // card we close below; later commands must target the office, not that closed page.
+  const officePage = () => app.windows().find((p) => p.url().endsWith('/index.html'));
+  await expect.poll(() => !!officePage(), { timeout: 15_000 }).toBe(true);
+  const restarted = officePage();
   await restarted.waitForFunction(() => !!window.office);
   await expect.poll(() => cardsCount(), { timeout: 15_000 }).toBe(1);
   const back = app.windows().find((p) => p.url().endsWith('#card'));
