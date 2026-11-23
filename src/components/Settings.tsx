@@ -565,7 +565,10 @@ export function Settings({
               </div>
             )}
           {terminalSend !== undefined && !isWindows && (
-            <BuiltinTerminals enabled={snapshot.preferences?.builtinTerminal === true} />
+            <BuiltinTerminals
+              enabled={snapshot.preferences?.builtinTerminal === true}
+              privacy={!!snapshot.preferences?.privacy}
+            />
           )}
           {terminalSend !== undefined && !isWindows && (
             <div className="setting-row" data-setting="term-font-size">

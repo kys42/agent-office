@@ -9,6 +9,7 @@ interface Options {
   /** No daemon runs. */
   off?: boolean;
   window?: boolean;
+  privacy?: boolean;
 }
 
 async function setup(page: Page, options: Options = {}) {
@@ -16,6 +17,7 @@ async function setup(page: Page, options: Options = {}) {
   s.preferences.locale = 'ko';
   s.preferences.builtinTerminal = options.enabled !== false;
   if (options.window !== undefined) s.preferences.builtinTerminalWindow = options.window;
+  if (options.privacy) s.preferences.privacy = true;
   const now = Date.now();
   await page.addInitScript(
     ({ s, off, now }) => {
@@ -201,4 +203,17 @@ test('the setting off with nothing running hides the list and the window switch'
 test('the setting off still lists sessions that keep running', async ({ page }) => {
   await setup(page, { enabled: false });
   await expect(row(page, 'ao-1')).toContainText('버터');
+});
+
+test('hidden screen content masks names and folders even in an answer that still has them', async ({
+  page,
+}) => {
+  // The stub answers unredacted, as a list loaded before hiding was turned on would.
+  await setup(page, { privacy: true });
+  const butter = row(page, 'ao-1');
+  await expect(butter).toContainText('PID 4242');
+  await expect(butter).not.toContainText('버터');
+  await expect(butter).not.toContainText('~/work/app');
+  await expect(butter).not.toContainText('claude');
+  await expect(butter).toContainText('ao-1');
 });

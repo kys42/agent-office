@@ -1072,18 +1072,23 @@ function setupBuiltinViews(builtin: TermBuiltin) {
     if (!stats) throw new Error(m().shell.gone);
     const t = m().shell;
     const names = await conversationsIn(session, stats.cwd);
+    // Screen content hidden (read after the lookups): the dialog names no folder, program or
+    // conversation, as the list it may come from does not.
+    const hidden = !!delivery.latest?.preferences?.privacy;
     const window = BrowserWindow.fromWebContents(sender);
     const options = {
       type: 'warning' as const,
       title: t.term.killTitle,
-      message: t.term.killConfirm(names.join(', ')),
-      detail: [
-        `${t.term.agent}: ${path.basename(stats.argv[0] ?? '')}`,
-        `${t.folder}: ${stats.cwd}`,
-        `${t.term.command}: ${[path.basename(stats.argv[0] ?? ''), ...stats.argv.slice(1)].join(' ').slice(0, 300)}`,
-        '',
-        t.term.killDetail,
-      ].join('\n'),
+      message: t.term.killConfirm(hidden ? '' : names.join(', ')),
+      detail: hidden
+        ? t.term.killDetail
+        : [
+            `${t.term.agent}: ${path.basename(stats.argv[0] ?? '')}`,
+            `${t.folder}: ${stats.cwd}`,
+            `${t.term.command}: ${[path.basename(stats.argv[0] ?? ''), ...stats.argv.slice(1)].join(' ').slice(0, 300)}`,
+            '',
+            t.term.killDetail,
+          ].join('\n'),
       buttons: [t.cancel, t.term.killButton],
       defaultId: 0,
       cancelId: 0,

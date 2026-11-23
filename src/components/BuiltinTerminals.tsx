@@ -17,7 +17,14 @@ import {
  * the list, the names and every action come from main. Refreshed every few seconds while it is
  * on screen, and right after an action.
  */
-export function BuiltinTerminals({ enabled }: { enabled: boolean }) {
+export function BuiltinTerminals({
+  enabled,
+  privacy = false,
+}: {
+  enabled: boolean;
+  /** Screen content hidden now: masks a list already loaded before the next refresh. */
+  privacy?: boolean;
+}) {
   const { t } = useI18n();
   const s = t.settings.builtinList;
   const service = api.builtinTerminals;
@@ -58,6 +65,7 @@ export function BuiltinTerminals({ enabled }: { enabled: boolean }) {
   }, [service, refresh]);
 
   if (!service || (listing && !listing.supported)) return null;
+  const hidden = privacy || !!listing?.hidden;
   // Off and nothing running: nothing to show.
   if (!enabled && (!listing || (!listing.daemon && !listing.error))) return null;
 
@@ -103,13 +111,15 @@ export function BuiltinTerminals({ enabled }: { enabled: boolean }) {
       </div>
       {daemon && (
         <>
-          <p className="builtin-terms-hint">{listing?.hidden ? s.hidden : s.hint}</p>
+          <p className="builtin-terms-hint">{hidden ? s.hidden : s.hint}</p>
           {listing!.sessions.length === 0 ? (
             <p className="builtin-terms-empty">{s.empty}</p>
           ) : (
             <ul className="builtin-terms-list">
               {listing!.sessions.map((row) => {
-                const names = row.agents.map((a) => a.name).join(', ');
+                const names = hidden ? '' : row.agents.map((a) => a.name).join(', ');
+                const program = hidden ? '' : row.program;
+                const cwd = hidden ? '' : row.cwd;
                 const ended = !!row.exit;
                 return (
                   <li
@@ -119,14 +129,14 @@ export function BuiltinTerminals({ enabled }: { enabled: boolean }) {
                   >
                     <div className="builtin-terms-main">
                       <b title={names || undefined}>
-                        {names || row.program || row.id}
-                        {names && row.program && (
-                          <span className="builtin-terms-program">{row.program}</span>
+                        {names || program || row.id}
+                        {names && program && (
+                          <span className="builtin-terms-program">{program}</span>
                         )}
                       </b>
-                      {row.cwd && (
-                        <span className="builtin-terms-path" title={row.cwd}>
-                          {shortPath(row.cwd)}
+                      {cwd && (
+                        <span className="builtin-terms-path" title={cwd}>
+                          {shortPath(cwd)}
                         </span>
                       )}
                       <span className="builtin-terms-meta">
@@ -140,7 +150,7 @@ export function BuiltinTerminals({ enabled }: { enabled: boolean }) {
                         <span>{s.started(ago(row.startedAt))}</span>
                         {row.rss !== undefined && <span>{s.memory(formatBytes(row.rss))}</span>}
                         {!ended && <span>{s.pid(row.pid)}</span>}
-                        {!names && !listing!.hidden && !ended && <span>{s.unknown}</span>}
+                        {!names && !hidden && !ended && <span>{s.unknown}</span>}
                       </span>
                     </div>
                     <div className="builtin-terms-actions">

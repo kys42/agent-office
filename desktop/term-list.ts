@@ -29,8 +29,13 @@ export interface TermListDeps {
 }
 
 export async function builtinListing(deps: TermListDeps, fresh = true): Promise<BuiltinListing> {
-  const hidden = deps.hidden();
-  const empty: BuiltinListing = { supported: deps.supported, daemon: null, sessions: [], hidden };
+  const hiddenAtStart = deps.hidden();
+  const empty: BuiltinListing = {
+    supported: deps.supported,
+    daemon: null,
+    sessions: [],
+    hidden: hiddenAtStart,
+  };
   if (!deps.supported) return empty;
   let list: ListResult | null;
   try {
@@ -41,12 +46,14 @@ export async function builtinListing(deps: TermListDeps, fresh = true): Promise<
   if (!list) return empty;
   const live = list.sessions.filter((s) => !s.exit);
   const [agents, memory] = await Promise.all([
-    hidden
+    hiddenAtStart
       ? new Map<string, BuiltinSessionAgent[]>()
       : deps.agents(live.map((s) => ({ id: s.id, cwd: s.cwd }))).catch(() => new Map()),
     deps.memory?.(live.map((s) => s.pid)).catch(() => new Map<number, number>()) ??
       new Map<number, number>(),
   ]);
+  // Hiding turned on while the lookups ran still hides this answer.
+  const hidden = hiddenAtStart || deps.hidden();
   const sessions: BuiltinSessionRow[] = list.sessions
     .map((s) => {
       const rss = s.exit ? undefined : memory.get(s.pid);

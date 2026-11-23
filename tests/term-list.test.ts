@@ -124,6 +124,25 @@ test('hidden screen content keeps folders, programs and names out of the list', 
   assert.equal(listing.sessions.length, 3, 'the sessions themselves still show');
 });
 
+test('hiding turned on while the lookups run still hides that answer', async () => {
+  let hide = false;
+  const listing = await builtinListing(
+    deps({
+      hidden: () => hide,
+      agents: async () => {
+        hide = true; // the person turns hiding on mid-request
+        return new Map([['old', [{ id: 's1', name: '버터', provider: 'claude' }]]]);
+      },
+    }),
+  );
+  assert.equal(listing.hidden, true);
+  for (const row of listing.sessions) {
+    assert.equal(row.cwd, '');
+    assert.equal(row.program, '');
+    assert.deepEqual(row.agents, []);
+  }
+});
+
 test('no daemon, an unanswering daemon and an unsupported platform each say so', async () => {
   assert.deepEqual(await builtinListing(deps({ listing: async () => null })), {
     supported: true,
