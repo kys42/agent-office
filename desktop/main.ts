@@ -26,6 +26,14 @@ import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
 import { TermWindows } from './term-windows.js';
 import { TermViews } from './term-views.js';
+import {
+  builtinAction,
+  builtinListing,
+  officeAgentsIn,
+  psRss,
+  type TerminalLocator,
+} from './term-list.js';
+import { parseBuiltinAction } from '../src/shared/term-list.js';
 import { parseTermCommand, validTermInput } from '../src/shared/term-view.js';
 import { ReaderWindows } from './reader-windows.js';
 import {
@@ -984,6 +992,14 @@ function setupMiniShell() {
     if (validShellInput(ptyId, data)) shells.write(e.sender.id, ptyId as string, data);
   });
 }
+/**
+ * Each provider's own lookup of where its live conversation runs (its adapter), for finding
+ * which conversations run in a built-in session. A provider without one is never matched.
+ */
+const terminalLocators = (fresh: boolean): Partial<Record<string, TerminalLocator>> => ({
+  claude: (nativeId) => locateTerminal(nativeId, { fresh }),
+  codex: (nativeId) => findCodexTerminal(nativeId, { fresh }),
+});
 /** What runs in a built-in session, for its window's header: the agent and its folder. */
 const termTitle = (s: Pick<SessionStats, 'argv' | 'cwd'>) =>
   `${path.basename(s.argv[0] ?? '')} · ${path.basename(s.cwd) || s.cwd}`;
@@ -1042,31 +1058,80 @@ function setupBuiltinViews(builtin: TermBuiltin) {
     return m().desktop.terminal.builtinOpened;
   };
   /**
-   * The office's conversations running in a built-in session (its folder's Claude and Codex,
-   * located as for a jump), for the end-it confirmation: which conversation's agent ends.
+   * The office's conversations running in built-in sessions (their folders' conversations,
+   * located as for a jump through each provider's lookup): for the end-it confirmation and the
+   * Settings list.
    */
-  const conversationsIn = async (session: string, cwd: string) => {
-    const local = (delivery.latest?.sessions ?? [])
-      .filter(
-        (s) =>
-          !s.remote &&
-          !!s.cwd &&
-          path.resolve(s.cwd) === path.resolve(cwd) &&
-          ['claude', 'codex'].includes(s.provider),
-      )
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 20);
-    const names: string[] = [];
-    for (const s of local) {
-      const terminal =
-        s.provider === 'claude'
-          ? await locateTerminal(s.nativeId, { fresh: true }).catch(() => null)
-          : await findCodexTerminal(s.nativeId, { fresh: true }).catch(() => null);
-      if (terminal?.host.kind === 'builtin' && terminal.host.session === session)
-        names.push(s.alias || s.title);
-    }
-    return names;
+  const agentsIn = (sessions: { id: string; cwd: string }[], fresh: boolean) =>
+    officeAgentsIn(sessions, delivery.latest?.sessions ?? [], terminalLocators(fresh));
+  const conversationsIn = async (session: string, cwd: string) =>
+    ((await agentsIn([{ id: session, cwd }], true)).get(session) ?? []).map((a) => a.name);
+  /** Asks the person in main's dialog, then ends the session (still the same one). */
+  const confirmKill = async (session: string, sender: Electron.WebContents) => {
+    const stats = await builtin.session(session);
+    if (!stats) throw new Error(m().shell.gone);
+    const t = m().shell;
+    const names = await conversationsIn(session, stats.cwd);
+    const window = BrowserWindow.fromWebContents(sender);
+    const options = {
+      type: 'warning' as const,
+      title: t.term.killTitle,
+      message: t.term.killConfirm(names.join(', ')),
+      detail: [
+        `${t.term.agent}: ${path.basename(stats.argv[0] ?? '')}`,
+        `${t.folder}: ${stats.cwd}`,
+        `${t.term.command}: ${[path.basename(stats.argv[0] ?? ''), ...stats.argv.slice(1)].join(' ').slice(0, 300)}`,
+        '',
+        t.term.killDetail,
+      ].join('\n'),
+      buttons: [t.cancel, t.term.killButton],
+      defaultId: 0,
+      cancelId: 0,
+    };
+    const response = window
+      ? await dialog.showMessageBox(window, options)
+      : await dialog.showMessageBox(options);
+    if (response.response !== 1) return false;
+    // The person agreed to end that very session: still the same one now (ids are unique).
+    if (!(await builtin.session(session))) throw new Error(m().shell.gone);
+    return builtin.kill(session);
   };
+  /**
+   * Settings › 내장 터미널: the daemon's sessions (desktop/term-list.ts) and the actions on one.
+   * Only the office's own windows ask; nothing here starts a daemon.
+   */
+  const rss = psRss(runCommand);
+  ipcMain.handle(
+    'office:builtin-terminals',
+    async (e, op: unknown, session: unknown, act: unknown) => {
+      trusted(e);
+      if (op === 'list')
+        return builtinListing({
+          supported: builtinSupported(),
+          listing: (fresh) => builtin.listing(fresh),
+          hidden: () => !!delivery.latest?.preferences?.privacy,
+          windowOpen: (id) => termWindows.has(id),
+          agents: (sessions) => agentsIn(sessions, false),
+          memory: rss,
+        });
+      if (op !== 'act') throw new Error(m().desktop.badRequest);
+      let request;
+      try {
+        request = parseBuiltinAction(session, act);
+      } catch {
+        throw new Error(m().desktop.badRequest);
+      }
+      return builtinAction(
+        {
+          show: (id) => builtin.show!(id),
+          hide: (id) => termWindows.close(id),
+          kill: (id) => confirmKill(id, e.sender),
+        },
+        request.session,
+        request.action,
+      );
+    },
+  );
   ipcMain.handle('office:term-window', async (e, what: unknown) => {
     trustedTerm(e);
     if (what === 'target') return termWindows.target(e.sender);
@@ -1116,35 +1181,8 @@ function setupBuiltinViews(builtin: TermBuiltin) {
         return views.flow(owner, command.viewId, command.paused);
       case 'detach':
         return views.detach(owner, command.viewId);
-      case 'kill': {
-        const stats = await builtin.session(session);
-        if (!stats) throw new Error(m().shell.gone);
-        const t = m().shell;
-        const names = await conversationsIn(session, stats.cwd);
-        const window = BrowserWindow.fromWebContents(e.sender);
-        const options = {
-          type: 'warning' as const,
-          title: t.term.killTitle,
-          message: t.term.killConfirm(names.join(', ')),
-          detail: [
-            `${t.term.agent}: ${path.basename(stats.argv[0] ?? '')}`,
-            `${t.folder}: ${stats.cwd}`,
-            `${t.term.command}: ${[path.basename(stats.argv[0] ?? ''), ...stats.argv.slice(1)].join(' ').slice(0, 300)}`,
-            '',
-            t.term.killDetail,
-          ].join('\n'),
-          buttons: [t.cancel, t.term.killButton],
-          defaultId: 0,
-          cancelId: 0,
-        };
-        const response = window
-          ? await dialog.showMessageBox(window, options)
-          : await dialog.showMessageBox(options);
-        if (response.response !== 1) return false;
-        // The person agreed to end that very session: still the same one now (ids are unique).
-        if (!(await builtin.session(session))) throw new Error(m().shell.gone);
-        return builtin.kill(session);
-      }
+      case 'kill':
+        return confirmKill(session, e.sender);
     }
   });
   ipcMain.on('office:term-input', (e, viewId: unknown, data: unknown) => {
@@ -1567,7 +1605,10 @@ function setupIPC() {
         binary: defaultResumeDeps.binary,
         version: cliVersion,
         directory: defaultResumeDeps.directory,
-        opened: (id) => void builtinTerminals.show?.(id).catch(() => undefined),
+        // A new session's window opens unless the person chose to start it hidden.
+        opened: (id) =>
+          delivery.latest?.preferences?.builtinTerminalWindow !== false &&
+          void builtinTerminals.show?.(id).catch(() => undefined),
       }),
       terminalApp: terminalAppDestination(shellDeps),
       copy: copyDestination(shellDeps),

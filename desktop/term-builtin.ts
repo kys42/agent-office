@@ -8,7 +8,7 @@ import {
   type DaemonCommand,
 } from './term-host/client.js';
 import { termHostPaths } from './term-host/endpoint.js';
-import type { ScreenRead, SessionSpec, SessionStats } from './term-host/protocol.js';
+import type { ListResult, ScreenRead, SessionSpec, SessionStats } from './term-host/protocol.js';
 
 /**
  * The built-in terminal as the rest of the main process sees it (#401): the terminal host
@@ -74,7 +74,7 @@ export class TermBuiltin implements BuiltinTerminals {
   show?: (sessionId: string) => Promise<string>;
   private client: Promise<TermHostClient> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
-  private cached: { at: number; value: Promise<BuiltinInventory | null> } | null = null;
+  private cached: { at: number; value: Promise<ListResult | null> } | null = null;
   private readonly socket: string;
   private readonly now: () => number;
 
@@ -87,7 +87,16 @@ export class TermBuiltin implements BuiltinTerminals {
     return builtinSupported(this.options.platform ?? process.platform);
   }
 
-  sessions(fresh = false): Promise<BuiltinInventory | null> {
+  async sessions(fresh = false): Promise<BuiltinInventory | null> {
+    const list = await this.listing(fresh);
+    return list && { daemonPid: list.daemon.pid, sessions: list.sessions.filter((s) => !s.exit) };
+  }
+
+  /**
+   * The daemon's whole list (ended sessions it still keeps, its totals and memory); null when no
+   * daemon runs. Shares the lookups' one-second answer; never starts a daemon.
+   */
+  listing(fresh = false): Promise<ListResult | null> {
     if (!this.supported) return Promise.resolve(null);
     const cacheMs = this.options.cacheMs ?? 1000;
     const hit = this.cached;
@@ -99,7 +108,7 @@ export class TermBuiltin implements BuiltinTerminals {
     return value;
   }
 
-  private async listLive(): Promise<BuiltinInventory | null> {
+  private async listLive(): Promise<ListResult | null> {
     let client: TermHostClient;
     try {
       client = await this.connection(false);
@@ -107,8 +116,7 @@ export class TermBuiltin implements BuiltinTerminals {
       if (error instanceof TermHostError && error.absent) return null;
       throw error;
     }
-    const list = await this.timed(client, client.list());
-    return { daemonPid: list.daemon.pid, sessions: list.sessions.filter((s) => !s.exit) };
+    return this.timed(client, client.list());
   }
 
   async screen(sessionId: string): Promise<ScreenRead> {

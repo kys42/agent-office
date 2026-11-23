@@ -86,6 +86,12 @@ body.shell-mode {
 .mini-shell-btn.danger:hover:not(:disabled) {
   color: #d70015;
 }
+/* The built-in terminal's 숨기기: the safe, everyday way out (the session keeps running), framed
+   so it never reads as the red 종료 beside it. */
+.mini-shell-btn.hide {
+  border-color: var(--line, rgba(127, 127, 127, 0.35));
+  color: var(--text);
+}
 .mini-shell-btn:disabled {
   opacity: 0.45;
   cursor: default;

@@ -46,6 +46,9 @@ export const shell = {
     agent: 'Agent',
     command: 'Running',
     hidden: "The built-in terminal can't open while screen content is hidden.",
+    hide: 'Hide',
+    hideTitle: (key: string) =>
+      `Hide this window${key ? ` (${key})` : ''}. The agent keeps running in the background; Settings › Built-in terminal opens it again.`,
   },
   /** Both terminal windows: find bar, right-click menu and text size (⌘F, ⌘=, ⌘-, ⌘0). */
   view: {

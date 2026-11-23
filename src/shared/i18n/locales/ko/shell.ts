@@ -42,6 +42,9 @@ export const shell: Messages['shell'] = {
     agent: '에이전트',
     command: '실행 중',
     hidden: '화면 내용을 숨기는 동안에는 내장 터미널을 열 수 없어요.',
+    hide: '숨기기',
+    hideTitle: (key) =>
+      `창만 숨겨요${key ? `(${key})` : ''}. 에이전트는 뒤에서 계속 실행되고, 설정 › 내장 터미널에서 다시 열 수 있어요.`,
   },
   view: {
     find: '찾기',

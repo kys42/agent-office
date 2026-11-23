@@ -277,6 +277,16 @@ export class PopupWindows<Target> {
   onTop(sender: WebContents) {
     return this.require(sender).float;
   }
+  /** Whether the window of `key` is open now. */
+  has(key: string) {
+    return this.live().some((e) => e.key === key);
+  }
+  /** Closes the window of `key`, if open; answers whether one was. */
+  close(key: string) {
+    const open = this.live().filter((e) => e.key === key);
+    for (const e of open) e.window.close();
+    return open.length > 0;
+  }
   /** Closes every window of this kind. */
   closeAll() {
     for (const w of this.windows()) w.close();
