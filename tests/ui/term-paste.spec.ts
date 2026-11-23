@@ -42,7 +42,7 @@ interface Rig {
   /** Raw bytes main sent to the window, in order (what the view parsed). */
   sent: { data: number; resync: number; pauses: number };
   /** The window's live view, once attached. */
-  view: { id: string; held: boolean };
+  view: { id: string; held: boolean; onAttach?: () => Promise<void> };
 }
 
 async function start(page: Page, extraEnv: Record<string, string> = {}): Promise<Rig> {
@@ -77,7 +77,7 @@ async function start(page: Page, extraEnv: Record<string, string> = {}): Promise
     rows: 50,
   });
   const sent = { data: 0, resync: 0, pauses: 0 };
-  const view = { id: '', held: false };
+  const view: Rig['view'] = { id: '', held: false };
   const views = new TermViews({ connect: () => connectTermHost(options) });
   // Main → window, in order (Electron's IPC keeps one order across channels).
   let chain = Promise.resolve();
@@ -105,6 +105,7 @@ async function start(page: Page, extraEnv: Record<string, string> = {}): Promise
     if (c.type === 'attach') {
       const a = await views.attach(OWNER, stats.id, { cols: c.cols, rows: c.rows }, sink);
       view.id = a.viewId;
+      await view.onAttach?.();
       await chain;
       return a;
     }
@@ -198,6 +199,10 @@ async function settle(page: Page, rig: Rig, want: string) {
   await expect
     .poll(() => daemonRows().then((r) => r.join('\n')), { timeout: 30_000 })
     .toContain(want);
+  // The program draws for as many rows as the window shows.
+  await expect
+    .poll(async () => (await rig.client.screen(rig.session)).rows)
+    .toBe((await viewRows(page)).length);
   await expect
     .poll(
       async () => {
@@ -236,6 +241,28 @@ test('a long Korean paste into an Ink-like program draws what the program drew',
     console.log('hangul gap', gap);
     expect(gap).toBeLessThan(2);
     await page.screenshot({ path: '.local/term-paste.png' });
+  } finally {
+    await stop(rig);
+  }
+});
+
+test('a window whose height settles while it attaches gives the program its final size', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 900, height: 560 });
+  const rig = await start(page);
+  try {
+    // The window is still being laid out (its saved size applied, half a row more or less)
+    // while the attach answer and its nudge are on their way.
+    rig.view.onAttach = async () => {
+      await page.setViewportSize({ width: 880, height: 523 });
+      await page.setViewportSize({ width: 860, height: 517 });
+    };
+    await page.goto('/#term');
+    await expect.poll(() => viewRows(page).then((r) => r.join('\n'))).toContain('for shortcuts');
+    await paste(page, SHORT_PASTE);
+    await settle(page, rig, charCount(SHORT_PASTE));
   } finally {
     await stop(rig);
   }
