@@ -51,6 +51,8 @@ interface View {
   /** A redraw after a fresh screen is waiting (at most one at a time, see `RESYNC_REDRAW_MS`). */
   redrawTimer: ReturnType<typeof setTimeout> | null;
   lastRedraw: number;
+  /** Redraws asked by fresh screens since the window last typed or resized. */
+  recoveries: number;
 }
 
 /**
@@ -58,6 +60,13 @@ interface View {
  * a resize must not keep a view that is far behind falling behind again.
  */
 export const RESYNC_REDRAW_MS = 1000;
+
+/**
+ * At most this many redraws in a row from fresh screens, until the window types or resizes: a
+ * program whose redraw itself overflows the backlog would otherwise loop (fresh screen → redraw
+ * → fresh screen) on an idle terminal forever.
+ */
+export const RESYNC_REDRAW_MAX = 3;
 
 export class TermViews {
   private views = new Map<string, View>();
@@ -125,6 +134,7 @@ export class TermViews {
       resizing: Promise.resolve(),
       redrawTimer: null,
       lastRedraw: 0,
+      recoveries: 0,
     };
     this.views.set(viewId, view);
     // Draw again at the view's size: the program repaints what a snapshot cannot hold.
@@ -152,7 +162,8 @@ export class TermViews {
   /** After a fresh screen: one nudge now, or once `RESYNC_REDRAW_MS` has passed since the last. */
   private redrawSoon(viewId: string) {
     const view = this.views.get(viewId);
-    if (!view || view.redrawTimer) return;
+    if (!view || view.redrawTimer || view.recoveries >= RESYNC_REDRAW_MAX) return;
+    view.recoveries++;
     const wait = Math.max(0, view.lastRedraw + RESYNC_REDRAW_MS - Date.now());
     view.redrawTimer = setTimeout(() => {
       view.redrawTimer = null;
@@ -172,6 +183,7 @@ export class TermViews {
   write(owner: number, viewId: string, data: string) {
     const view = this.own(owner, viewId);
     if (!view) return;
+    view.recoveries = 0;
     try {
       view.client.write(view.session, data);
     } catch {
@@ -183,6 +195,7 @@ export class TermViews {
     const view = this.own(owner, viewId);
     if (!view) return;
     view.size = { cols, rows };
+    view.recoveries = 0;
     this.sendSize(view, null);
   }
 

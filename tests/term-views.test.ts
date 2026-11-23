@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TermViews, type TermViewSink } from '../desktop/term-views.js';
+import {
+  RESYNC_REDRAW_MAX,
+  RESYNC_REDRAW_MS,
+  TermViews,
+  type TermViewSink,
+} from '../desktop/term-views.js';
 import { TermHostClient } from '../desktop/term-host/client.js';
 import { FAKE_TOKEN, connectionPair, fakeTermHost } from '../desktop/term-host/fakes.js';
 import {
@@ -173,6 +178,40 @@ test('a fresh screen after falling behind is followed by a nudge, so the program
   views.resize(7, a.viewId, 90, 24);
   await sleep(5);
   assert.deepEqual(pty.sizes.at(-1), [90, 24]);
+  pty.exit(0);
+  await t.host.shutdown();
+});
+
+test('redraws from fresh screens stop after a few in a row, until the window types again', async () => {
+  const { t, views, seen, sink, servers } = setup({ highWaterBytes: 1, maxLagBytes: 1000 });
+  const pty = await session(t, 'ao-loop');
+  const a = await views.attach(7, 'ao-loop', { cols: 80, rows: 24 }, sink);
+  await sleep(10);
+  // A program whose every redraw overflows the backlog: each resize floods the stalled view.
+  const flood = async () => {
+    servers.at(-1)!.stall();
+    for (const c of 'xyz') {
+      pty.output(c.repeat(600));
+      await sleep(5);
+    }
+    servers.at(-1)!.resume();
+    await sleep(20);
+  };
+  let nudges = 0;
+  for (let i = 0; i < RESYNC_REDRAW_MAX + 3; i++) {
+    pty.sizes.length = 0;
+    await flood();
+    await sleep(RESYNC_REDRAW_MS + 50);
+    if (pty.sizes.length) nudges++;
+  }
+  assert.ok(seen.resync.length > RESYNC_REDRAW_MAX);
+  assert.equal(nudges, RESYNC_REDRAW_MAX, 'an idle terminal stops redrawing');
+  // Typing again lets the next fresh screen redraw.
+  views.write(7, a.viewId, 'k');
+  pty.sizes.length = 0;
+  await flood();
+  await sleep(RESYNC_REDRAW_MS + 50);
+  assert.ok(pty.sizes.length > 0);
   pty.exit(0);
   await t.host.shutdown();
 });
