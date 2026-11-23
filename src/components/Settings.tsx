@@ -9,6 +9,7 @@ import { zoneLabel } from '../shared/zones';
 import { MobileSettings } from './MobileSettings';
 import { FederationSettings } from './FederationSettings';
 import { AppHealth } from './AppHealth';
+import { BuiltinTerminals } from './BuiltinTerminals';
 import { petLook, PET_CHARACTERS, PET_ACCESSORIES } from '../shared/pets';
 import {
   ShieldCheck,
@@ -20,6 +21,7 @@ import {
   LayoutGrid,
   Terminal,
   SquareTerminal,
+  AppWindow,
   ALargeSmall,
   Languages,
   X,
@@ -541,6 +543,32 @@ export function Settings({
                 }
               />
             </div>
+          )}
+          {terminalSend !== undefined &&
+            !isWindows &&
+            snapshot.preferences?.builtinTerminal === true && (
+              <div className="setting-row" data-setting="builtin-terminal-window">
+                <AppWindow size={18} />
+                <div>
+                  <b>{s.builtinTerminalWindow}</b>
+                  <p>{s.builtinTerminalWindowHint}</p>
+                </div>
+                <Toggle
+                  checked={snapshot.preferences?.builtinTerminalWindow !== false}
+                  label={s.builtinTerminalWindow}
+                  onChange={() =>
+                    onPrefs({
+                      builtinTerminalWindow: snapshot.preferences?.builtinTerminalWindow === false,
+                    })
+                  }
+                />
+              </div>
+            )}
+          {terminalSend !== undefined && !isWindows && (
+            <BuiltinTerminals
+              enabled={snapshot.preferences?.builtinTerminal === true}
+              privacy={!!snapshot.preferences?.privacy}
+            />
           )}
           {terminalSend !== undefined && !isWindows && (
             <div className="setting-row" data-setting="term-font-size">

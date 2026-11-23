@@ -126,6 +126,12 @@ const api: OfficeAPI = {
           },
           window: (what: string) => action('office:term-window', what),
         } as OfficeAPI['term'],
+        // Settings › 내장 터미널: the background sessions and what to do with one.
+        builtinTerminals: {
+          list: () => action('office:builtin-terminals', 'list'),
+          act: (session: string, what: string) =>
+            action('office:builtin-terminals', 'act', session, what),
+        } as OfficeAPI['builtinTerminals'],
         // Both terminal windows: paste where the keyboard is, and a dropped file's path.
         termView: {
           paste: () => action('office:term-paste'),

@@ -566,6 +566,12 @@ export interface Preferences {
    * (macOS and Linux). Sessions already running there are recognised either way. Missing: off.
    */
   builtinTerminal?: boolean;
+  /**
+   * Desktop: a session started in the built-in terminal opens its terminal window at once;
+   * off, it starts hidden (running in the background; Settings › 내장 터미널 lists and opens it).
+   * Missing: on.
+   */
+  builtinTerminalWindow?: boolean;
   /** Size of reading text (#246) in every window. Missing: `normal`. */
   textSize?: TextSize;
   /** Font of reading text (#246); pixel lettering keeps its own. Missing: `system`. */
@@ -1224,6 +1230,15 @@ export interface OfficeAPI {
   termView?: {
     paste: () => Promise<void>;
     pathForFile: (file: File) => string;
+  };
+
+  /**
+   * Desktop (macOS/Linux) only: the built-in terminal's sessions running in the background
+   * (Settings › 내장 터미널), and opening, hiding or ending one (ending asks first, in main).
+   */
+  builtinTerminals?: {
+    list: () => Promise<import('./term-list').BuiltinListing>;
+    act: (session: string, action: import('./term-list').BuiltinSessionAction) => Promise<boolean>;
   };
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */

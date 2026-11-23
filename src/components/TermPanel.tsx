@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { LoaderCircle, Power, SquareTerminal, X } from 'lucide-react';
+import { EyeOff, LoaderCircle, Power, SquareTerminal } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
+import { isMac } from '../lib/platform';
 import { OnTopButton, usePopupOnTop } from './WindowPin';
 import { termOptions, useTermChrome } from './TermChrome';
 import {
@@ -270,7 +271,9 @@ export default function TermPanel({ target }: { target: TermTarget }) {
     return () => clearTimeout(timer);
   }, [note]);
 
-  const close = () => void term.window('close').catch(() => window.close());
+  // Hiding closes the window only: the view detaches and the session keeps running in the
+  // daemon (Settings › 내장 터미널 lists it). ⌘W is the macOS window menu's own Close.
+  const hide = () => void term.window('close').catch(() => window.close());
   const kill = async () => {
     try {
       await term.command({ type: 'kill' });
@@ -312,12 +315,12 @@ export default function TermPanel({ target }: { target: TermTarget }) {
         />
         <button
           type="button"
-          className="mini-shell-btn icon"
-          aria-label={t.shell.close}
-          title={t.shell.close}
-          onClick={close}
+          className="mini-shell-btn hide"
+          title={t.shell.term.hideTitle(isMac ? '⌘W' : '')}
+          onClick={hide}
         >
-          <X size={14} />
+          <EyeOff size={12} />
+          {t.shell.term.hide}
         </button>
       </header>
       <div className="mini-shell-body">

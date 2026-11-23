@@ -1723,3 +1723,112 @@ body.is-windows .settings-window-bar {
     padding: 10px 4px;
   }
 }
+
+/* Settings › 내장 터미널: the sessions running in the background, one row each. */
+.builtin-terms {
+  border-top: 1px solid var(--line);
+}
+.builtin-terms-head {
+  padding-bottom: 4px;
+}
+.builtin-terms-hint,
+.builtin-terms-empty,
+.builtin-terms-note {
+  margin: 0 0 8px 30px;
+  font-size: calc(11.5px * var(--read-scale));
+  color: var(--text-3);
+}
+.builtin-terms-note {
+  color: var(--text-2);
+}
+.builtin-terms-list {
+  list-style: none;
+  margin: 0 0 8px 30px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.builtin-terms-list > li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.builtin-terms-list > li[data-state='ended'] {
+  opacity: 0.65;
+}
+.builtin-terms-main {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.builtin-terms-main > b {
+  font-size: calc(12.5px * var(--read-scale));
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.builtin-terms-program {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-3);
+}
+.builtin-terms-path {
+  font-size: calc(11.5px * var(--read-scale));
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.builtin-terms-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-3);
+}
+.builtin-terms-list > li[data-state='open'] .builtin-terms-state {
+  color: var(--accent, var(--text));
+}
+.builtin-terms-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.builtin-terms-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: calc(11.5px * var(--read-scale));
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.builtin-terms-btn.icon {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+  border-color: transparent;
+}
+.builtin-terms-btn:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--text);
+}
+.builtin-terms-btn.danger:hover:not(:disabled) {
+  color: #d70015;
+  border-color: currentColor;
+}
+.builtin-terms-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

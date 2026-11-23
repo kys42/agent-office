@@ -130,6 +130,17 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
   - attach: `restoreSequence`를 세션 크기의 새 xterm에 그린 뒤 창 크기로 맞춥니다. 크기를 한 번 흔들어(`nudgeSizes`: 다른 크기면 그 크기로, 같으면 한 줄 줄였다가 되돌림) SIGWINCH로 TUI가 다시 그리게 합니다. attach 응답보다 먼저 온 출력은 복원 화면 뒤에 그립니다. 기록은 200줄만 요청합니다.
   - 창이 가려지면(최소화 등 `visibilitychange` hidden) detach하고, 다시 보이면 새로 attach합니다. 닫거나 새로고침해도 detach합니다. **보이지 않는 동안에는 아무것도 흐르지 않습니다.**
   - 종료 버튼은 main의 확인창을 거칩니다. 확인창에는 끝날 대화(그 폴더의 Claude·Codex 중 이 세션에서 찾은 것), 에이전트, 폴더, 실행 중인 명령을 보여 줍니다. 확인 뒤 세션이 아직 있을 때만 kill합니다(SIGHUP 그룹 → 3초 뒤 SIGKILL).
+- **숨기기와 목록** (설정 › 내장 터미널, `desktop/term-list.ts`, `src/components/BuiltinTerminals.tsx`):
+  - 터미널 창 머리의 **숨기기**(macOS는 ⌘W, 창 메뉴의 닫기)는 창만 닫습니다. 보기만 detach되고 세션은 데몬에서 계속 돕니다. 빨간 **종료**와 모양을 달리 했고, 툴팁에 뒤에서 계속 실행된다고 적었습니다.
+  - '시작할 때 터미널 창 열기'(`preferences.builtinTerminalWindow`, 기본 켜짐): 끄면 실행 직후 창을 열지 않고 뒤에서만 돕니다(`builtinDestination`의 `opened`). '터미널로 이동'이나 목록의 열기로 엽니다.
+  - 목록(`office:builtin-terminals` `list`)은 데몬의 `list`(끝난 세션 5분 보존분 포함)에 앱만 아는 것을 붙입니다. 프로토콜은 바꾸지 않았습니다.
+    - 창이 열려 있는지(`TermWindows.has`).
+    - 그 세션에서 도는 사무실 대화: 그 폴더의 대화를 각 공급자의 위치 찾기(`terminalLocators`: Claude `locateTerminal`, Codex `findCodexTerminal`)로 찾아 `builtin` 세션 id가 맞는 것만. 종료 확인창도 같은 함수를 씁니다. 목록은 캐시된 조회(`fresh: false`)를 씁니다.
+    - 세션 프로세스의 RSS: 살아 있는 pid만 `ps -o pid=,rss= -p …` 한 번. 데몬 RSS는 `list`의 `total.rss`.
+    - 화면 내용 숨기기 중에는 폴더·프로그램·대화 이름을 빼고 보냅니다(위치 찾기도 하지 않음).
+  - 행 동작(`act`)은 열기(`show`), 숨기기(그 세션의 창 닫기), 종료(창의 종료와 같은 main 확인창 → kill)입니다. 페이지는 세션 id와 동작 이름만 보내고 main이 둘 다 검사합니다(`parseBuiltinAction`).
+  - 설정 화면은 목록이 화면에 보이는 동안만 3초마다 새로 읽습니다(`IntersectionObserver` + 창 visibility). 데몬은 띄우지 않습니다(소켓이 없으면 '꺼져 있음').
+  - 설정이 꺼져 있어도 데몬이 돌고 있으면 목록을 보여 줍니다. 꺼져 있고 데몬도 없으면 숨깁니다.
 - **한계**
   - macOS의 `ps -E`는 Apple 플랫폼 바이너리(`/bin/cat` 등)의 환경을 보여 주지 않습니다. 에이전트 CLI(Claude·Codex·node)는 보입니다. tmux·Orca 인식도 같은 전제입니다.
   - Linux는 실행·답장 경로는 같지만, 프로세스 환경·tty 읽기(`ps -wwE`, `ttys…`)가 macOS 기준이라 인식이 되지 않을 수 있습니다(기존 Linux 한계와 같음). 그동안은 '시작 중' 예약만 중복 실행을 막습니다.

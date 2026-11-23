@@ -238,6 +238,30 @@ export const settings = {
   builtinTerminal: 'Built-in terminal (experimental)',
   builtinTerminalHint:
     "Offers the app's own terminal when starting a session, without tmux or Orca. Conversations started there keep running when windows close, and replies from a card reach them like tmux. macOS and Linux.",
+  builtinTerminalWindow: 'Open the terminal window on start',
+  builtinTerminalWindowHint:
+    'A session started in the built-in terminal shows its window right away. Off, it starts hidden and runs in the background: open it from the list below or with Go to terminal.',
+  builtinList: {
+    title: 'Built-in terminals running',
+    hint: 'Sessions the app keeps running in the background. Hiding a window keeps its session; ending stops the agent.',
+    daemonOff: 'The built-in terminal is not running. It starts with the first session.',
+    daemonError: (reason: string) => `Couldn't read the built-in terminal: ${reason}`,
+    summary: (live: number, memory: string) =>
+      `${live} running${memory ? ` · terminal host ${memory}` : ''}`,
+    empty: 'Nothing is running in the built-in terminal.',
+    hidden: 'Folders and names are hidden while screen content is hidden.',
+    unknown: 'No conversation found',
+    started: (when: string) => `Started ${when}`,
+    memory: (size: string) => `Memory ${size}`,
+    pid: (pid: number) => `PID ${pid}`,
+    windowOpen: 'Window open',
+    background: 'In the background',
+    ended: (code: number | null) => (code === null ? 'Ended' : `Ended (code ${code})`),
+    open: 'Open',
+    hide: 'Hide',
+    kill: 'End',
+    refresh: 'Refresh',
+  },
   termFontSize: 'Terminal text size',
   termFontSizeHint:
     'Text size of the mini and built-in terminal windows. ⌘= / ⌘- in a terminal change it too, and ⌘0 brings back the default (12px). Kept on this computer.',

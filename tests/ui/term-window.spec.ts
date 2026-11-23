@@ -186,11 +186,21 @@ test('an ended session shows its last screen and attaches nothing', async ({ pag
   expect((await commands(page)).filter((c: any) => c.type === 'detach')).toHaveLength(0);
 });
 
-test('closing the window goes through main (the session keeps running)', async ({ page }) => {
+test('숨기기 closes the window through main, apart from 종료 (the session keeps running)', async ({
+  page,
+}) => {
   await setup(page);
   await expect.poll(() => screenText(page)).toContain('restored-screen');
-  await page.getByRole('button', { name: '닫기 (계속 실행)' }).click();
+  const hide = page.getByRole('button', { name: '숨기기', exact: true });
+  // Says it keeps running, and is not the red end button.
+  await expect(hide).toHaveAttribute('title', /뒤에서 계속 실행/);
+  await expect(hide).not.toHaveClass(/danger/);
+  await expect(page.getByRole('button', { name: '종료' })).toHaveClass(/danger/);
+  await page.locator('.mini-shell-bar').screenshot({ path: '.local/term-window-hide.png' });
+  await hide.click();
   await expect.poll(() => page.evaluate(() => (window as any).windowCalls)).toContain('close');
+  // Hiding never ends the session.
+  expect((await commands(page)).filter((c: any) => c.type === 'kill')).toHaveLength(0);
 });
 
 test('a fresh screen from the daemon replaces what was drawn, after what was queued', async ({
