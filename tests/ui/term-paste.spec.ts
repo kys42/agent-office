@@ -238,8 +238,8 @@ test('a long Korean paste into an Ink-like program draws what the program drew',
       );
       return span ? parseFloat(getComputedStyle(span).letterSpacing) : NaN;
     });
-    console.log('hangul gap', gap);
-    expect(gap).toBeLessThan(2);
+    // Measured on macOS (Apple SD Gothic Neo); other systems have other Hangul fonts, if any.
+    if (process.platform === 'darwin') expect(gap).toBeLessThan(2);
     await page.screenshot({ path: '.local/term-paste.png' });
   } finally {
     await stop(rig);
