@@ -15,8 +15,8 @@ import {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const VIEW = '00000000-0000-4000-8000-000000000001';
 
-function setup() {
-  const t = fakeTermHost({ exitRetentionMs: 60_000 });
+function setup(limits: Parameters<typeof fakeTermHost>[0] = {}) {
+  const t = fakeTermHost({ exitRetentionMs: 60_000, ...limits });
   let n = 0;
   const servers: ReturnType<typeof connectionPair>[0][] = [];
   const views = new TermViews({
@@ -133,6 +133,46 @@ test('attach: the screen as it is, a nudge, then live output and keys', async ()
   await sleep(10);
   assert.deepEqual(seen.data, ['live']);
   assert.equal(t.host.sessions.get('ao-1')!.live, true);
+  pty.exit(0);
+  await t.host.shutdown();
+});
+
+test('a resize right after attach is not undone by the attach nudge', async () => {
+  const { t, views, sink } = setup();
+  const pty = await session(t, 'ao-race');
+  const a = await views.attach(7, 'ao-race', { cols: 80, rows: 24 }, sink);
+  // The window changed size while the nudge (one row smaller, then back) was on its way.
+  views.resize(7, a.viewId, 100, 30);
+  await sleep(20);
+  assert.deepEqual(pty.sizes.at(-1), [100, 30]);
+  pty.exit(0);
+  await t.host.shutdown();
+});
+
+test('a fresh screen after falling behind is followed by a nudge, so the program redraws', async () => {
+  const { t, views, seen, sink, servers } = setup({ highWaterBytes: 1, maxLagBytes: 1000 });
+  const pty = await session(t, 'ao-lag');
+  const a = await views.attach(7, 'ao-lag', { cols: 80, rows: 24 }, sink);
+  await sleep(10);
+  pty.sizes.length = 0;
+  // The window stops reading: its socket fills, the daemon drops its backlog.
+  servers.at(-1)!.stall();
+  for (const c of 'xyz') {
+    pty.output(c.repeat(600));
+    await sleep(5);
+  }
+  servers.at(-1)!.resume();
+  await sleep(20);
+  assert.equal(seen.resync.length, 1);
+  // A serialized screen lacks a saved cursor or character sets: the program draws again.
+  assert.deepEqual(pty.sizes, [
+    [80, 23],
+    [80, 24],
+  ]);
+  // A resize from the window still goes through after it.
+  views.resize(7, a.viewId, 90, 24);
+  await sleep(5);
+  assert.deepEqual(pty.sizes.at(-1), [90, 24]);
   pty.exit(0);
   await t.host.shutdown();
 });

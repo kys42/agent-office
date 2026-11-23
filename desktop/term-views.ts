@@ -12,6 +12,11 @@ import { restoreSequence, type ExitInfo } from './term-host/protocol.js';
  *
  * - attach: the screen as it is now (`restoreSequence`), then live output; the size is nudged
  *   once so the program draws its screen again (`nudgeSizes`).
+ * - resync (the view fell behind and the daemon sent a fresh screen): nudged the same way. A
+ *   serialized screen lacks what the program keeps relying on (a saved cursor, character sets),
+ *   and its next frames, drawn relative to that, would land in the wrong place until a resize.
+ * - sizes: one view's resizes and nudges go out one after another, and a nudge ends on the size
+ *   the window asked for last, so a nudge never undoes a newer resize.
  * - detach (the window hid, reloaded or closed): the connection ends; the session keeps running
  *   in the daemon, and nothing streams to a view nobody sees.
  */
@@ -39,7 +44,20 @@ interface View {
   owner: number;
   session: string;
   client: TermHostClient;
+  /** The size the window asked for last. */
+  size: { cols: number; rows: number };
+  /** Resizes sent for this view, in order. */
+  resizing: Promise<unknown>;
+  /** A redraw after a fresh screen is waiting (at most one at a time, see `RESYNC_REDRAW_MS`). */
+  redrawTimer: ReturnType<typeof setTimeout> | null;
+  lastRedraw: number;
 }
+
+/**
+ * Redraws asked by fresh screens are at least this far apart: a program redrawing everything on
+ * a resize must not keep a view that is far behind falling behind again.
+ */
+export const RESYNC_REDRAW_MS = 1000;
 
 export class TermViews {
   private views = new Map<string, View>();
@@ -69,10 +87,11 @@ export class TermViews {
       throw new Error(m().shell.gone);
     }
     client.onOutput((id, data) => id === session && sink.data(viewId, data));
-    client.onResync(
-      (id, restore) =>
-        id === session && sink.resync(viewId, restoreSequence(restore), restore.cols, restore.rows),
-    );
+    client.onResync((id, restore) => {
+      if (id !== session) return;
+      sink.resync(viewId, restoreSequence(restore), restore.cols, restore.rows);
+      this.redrawSoon(viewId);
+    });
     client.onExit((id, exit) => {
       if (id !== session) return;
       sink.exit(viewId, exit);
@@ -98,13 +117,50 @@ export class TermViews {
       if (stale()) throw new Error(m().shell.gone);
       return { ...answer, exited: { code: result.exit!.code, signal: result.exit!.signal } };
     }
-    this.views.set(viewId, { owner, session, client });
+    const view: View = {
+      owner,
+      session,
+      client,
+      size,
+      resizing: Promise.resolve(),
+      redrawTimer: null,
+      lastRedraw: 0,
+    };
+    this.views.set(viewId, view);
     // Draw again at the view's size: the program repaints what a snapshot cannot hold.
-    void (async () => {
-      for (const next of nudgeSizes(result, size))
-        await client.resize(session, next.cols, next.rows).catch(() => undefined);
-    })();
+    this.nudge(view, result);
     return answer;
+  }
+
+  /**
+   * Resizes the session so its program draws again (see `nudgeSizes`), from the size the screen
+   * was drawn at. The last step is the window's size when it is sent, not when it was queued.
+   */
+  private nudge(view: View, drawn: { cols: number; rows: number }) {
+    const steps = nudgeSizes(drawn, view.size);
+    steps.forEach((step, i) => this.sendSize(view, i === steps.length - 1 ? null : step));
+  }
+
+  /** Queues one resize of this view's session; `null` is the window's size at sending time. */
+  private sendSize(view: View, size: { cols: number; rows: number } | null) {
+    view.resizing = view.resizing.then(() => {
+      const next = size ?? view.size;
+      return view.client.resize(view.session, next.cols, next.rows).catch(() => undefined);
+    });
+  }
+
+  /** After a fresh screen: one nudge now, or once `RESYNC_REDRAW_MS` has passed since the last. */
+  private redrawSoon(viewId: string) {
+    const view = this.views.get(viewId);
+    if (!view || view.redrawTimer) return;
+    const wait = Math.max(0, view.lastRedraw + RESYNC_REDRAW_MS - Date.now());
+    view.redrawTimer = setTimeout(() => {
+      view.redrawTimer = null;
+      if (this.views.get(viewId) !== view) return;
+      view.lastRedraw = Date.now();
+      // Same size both ways: one row smaller and back.
+      this.nudge(view, view.size);
+    }, wait);
   }
 
   private own(owner: number, viewId: string) {
@@ -125,7 +181,9 @@ export class TermViews {
 
   resize(owner: number, viewId: string, cols: number, rows: number) {
     const view = this.own(owner, viewId);
-    if (view) void view.client.resize(view.session, cols, rows).catch(() => undefined);
+    if (!view) return;
+    view.size = { cols, rows };
+    this.sendSize(view, null);
   }
 
   /** Pauses or resumes reading this view's output (its window is behind / caught up). */
@@ -148,6 +206,7 @@ export class TermViews {
     const view = this.views.get(viewId);
     if (!view) return;
     this.views.delete(viewId);
+    if (view.redrawTimer) clearTimeout(view.redrawTimer);
     // Closing the connection detaches it in the daemon.
     // Destroyed, not ended: a paused view leaves unread output that a graceful end would wait
     // on, keeping the daemon's side open (and attached) for good.
