@@ -12,6 +12,31 @@ import { webLink } from '../shared/links';
 import { macTermKey, nextFontSize, shellQuotePaths, termShortcut } from '../shared/term-keys';
 
 /**
+ * Latin from a monospace font; Hangul (none of those have it) from the enlarged system faces in
+ * mini-shell.css, which fill a wide character's two cells instead of leaving gaps between them.
+ */
+export const TERM_HANGUL_FONT = 'Agent Office Term Hangul';
+export const TERM_FONT_FAMILY = `"JetBrains Mono", Menlo, Monaco, "${TERM_HANGUL_FONT}", monospace`;
+
+/**
+ * Resolves true once the Hangul face is ready, when it was not yet: xterm measures each
+ * character once, and a width measured with the fallback font would stay for good.
+ */
+let hangulReady: Promise<boolean> | null = null;
+function loadHangul(): Promise<boolean> {
+  const spec = `13px "${TERM_HANGUL_FONT}"`;
+  /** A Hangul syllable (U+D55C), so the face's unicode-range is the one asked for. */
+  const sample = '\ud55c';
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve(false);
+  if (document.fonts.check(spec, sample)) return Promise.resolve(false);
+  hangulReady ??= document.fonts
+    .load(spec, sample)
+    .then((faces) => faces.length > 0)
+    .catch(() => false);
+  return hangulReady;
+}
+
+/**
  * What makes both terminal windows (MiniShellPanel, TermPanel) feel like a Mac terminal: the
  * shared xterm options, Mac editing keys (src/shared/term-keys.ts), ⌘ shortcuts, clickable web
  * links, text size, find, right-click menu and dropped files. A panel creates its xterm with
@@ -19,7 +44,7 @@ import { macTermKey, nextFontSize, shellQuotePaths, termShortcut } from '../shar
  * byte still leaves through the panel's own `onData` → input path.
  */
 export const termOptions = (scrollback: number): ITerminalOptions => ({
-  fontFamily: '"JetBrains Mono", Menlo, Monaco, monospace',
+  fontFamily: TERM_FONT_FAMILY,
   fontSize: termFontSize(),
   lineHeight: 1.15,
   cursorBlink: true,
@@ -83,6 +108,15 @@ export function useTermChrome(): {
       refit();
     };
     const offFont = onTermFontSize(applyFont);
+    // The Hangul face arrived after this terminal opened: measure again with it.
+    let bound = true;
+    void loadHangul().then((loaded) => {
+      if (!bound || !loaded) return;
+      const family = term.options.fontFamily ?? TERM_FONT_FAMILY;
+      term.options.fontFamily = `${family}, monospace`;
+      term.options.fontFamily = family;
+      refit();
+    });
 
     term.attachCustomKeyEventHandler((e) => {
       if (!isMac || e.type !== 'keydown') return true;
@@ -154,6 +188,7 @@ export function useTermChrome(): {
     host?.addEventListener('dragover', onDragOver);
     host?.addEventListener('drop', onDrop);
     return () => {
+      bound = false;
       host?.removeEventListener('contextmenu', onMenu);
       host?.removeEventListener('dragover', onDragOver);
       host?.removeEventListener('drop', onDrop);
