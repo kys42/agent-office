@@ -354,3 +354,37 @@ test('A work group shown with the tools carries its chips; legacy ids are found'
   assert.deepEqual(ids(placeOutputChips(events, groups, [out('a', 'old-r1', 3)])), { t1: ['a'] });
   assert.equal(placeOutputChips([], groups, [out('a', 'r1', 3)]).size, 0);
 });
+
+test('A final answer keeps its chips when short replies follow it in the same turn', () => {
+  const final = (text: string, offset: number) => ({
+    ...claude('assistant', [{ type: 'text', text }], offset),
+    message: { role: 'assistant', content: [{ type: 'text', text }], stop_reason: 'end_turn' },
+  });
+  const s = parseRecords(
+    [
+      claude('user', [{ type: 'text', text: '/goal 문서 정리' }], 0),
+      final('완료했습니다.\n\n| 문서 |\n|---|\n| `/work/app/docs/README.md` |', 1),
+      // A goal loop that keeps the turn going: replies that name nothing.
+      final('검토 의견을 기다리고 있습니다.', 2),
+      final('검토 의견을 기다리고 있습니다.', 3),
+    ],
+    claudeOpts,
+  );
+  const answer = s.events.filter((e) => e.kind === 'assistant')[0];
+  const [readme] = s.outputs ?? [];
+  assert.equal(readme.key, '/work/app/docs/README.md');
+  assert.equal(readme.eventId, answer.id);
+  const shown = s.events
+    .filter((e) => e.kind === 'user' || e.kind === 'assistant')
+    .map((e) => ({ id: e.id, events: [{ id: e.id }] }));
+  assert.deepEqual(
+    Object.fromEntries(
+      [
+        ...placeOutputChips(s.events, shown, [
+          { id: 'o', eventId: readme.eventId, eventAt: readme.at, createdAt: readme.at },
+        ]),
+      ].map(([k, v]) => [k, v.map((o) => o.id)]),
+    ),
+    { [answer.id]: ['o'] },
+  );
+});
