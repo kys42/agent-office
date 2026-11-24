@@ -582,6 +582,31 @@ test('Inline code holding one absolute path is a mention; fenced blocks only len
   assert.deepEqual(keys(s), [['/work/app/out/d.md', 'mention']]);
 });
 
+test('Fences in lists and blockquotes hide their paths and nothing after them', () => {
+  assert.deepEqual(
+    mentionedFiles(
+      [
+        '1. 예시:',
+        '   ```',
+        '   `/work/app/in-list.md`',
+        '   ```',
+        '- ```sh',
+        '  `/work/app/in-item.md`',
+        '  ```',
+        '> ```',
+        '> `/work/app/in-quote.md`',
+        '> ```',
+        '````md',
+        '```',
+        '`/work/app/nested.md`',
+        '````',
+        '결과: `/work/app/out/after.md`',
+      ].join('\n'),
+    ),
+    ['/work/app/out/after.md'],
+  );
+});
+
 test('The two reported replies: open in a fenced block and a table of paths under ~/.claude/skills', () => {
   const home = os.homedir();
   const proj = path.join(home, '.claude/skills/work-manager/projects/demo');

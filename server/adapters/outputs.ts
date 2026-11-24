@@ -101,9 +101,26 @@ const word = (w: string) =>
     .replace(/^'(.*)'$/s, '$1')
     .replace(/\\(.)/g, '$1');
 
-/** Fenced code blocks (``` or ~~~, to their closing fence or the end), blanked out. */
-const withoutFences = (text: string) =>
-  text.replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm, '');
+/**
+ * The text outside fenced code blocks (``` or ~~~, to a closing fence at least as long, or the
+ * end). A fence may sit in a blockquote or a list item (`> ```, `- ```, `1. ```): its line is
+ * read past those markers.
+ */
+export function withoutFences(text: string): string {
+  const kept: string[] = [];
+  let open: { char: string; size: number } | undefined;
+  for (const line of text.split('\n')) {
+    const body = line.replace(/^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?/, '');
+    const fence = /^(`{3,}|~{3,})(.*)$/.exec(body);
+    if (open) {
+      if (fence && fence[1][0] === open.char && fence[1].length >= open.size && !fence[2].trim())
+        open = undefined;
+    } else if (fence && !(fence[1][0] === '`' && fence[2].includes('`')))
+      open = { char: fence[1][0], size: fence[1].length };
+    else kept.push(line);
+  }
+  return kept.join('\n');
+}
 
 /** A local file named alone in inline code: absolute, `~/`, a drive path or a `file://` URL. */
 const INLINE_PATH = /^(?:\/(?!\/)|~\/|[A-Za-z]:[\\/]|file:\/\/)/;
