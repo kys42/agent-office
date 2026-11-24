@@ -622,6 +622,20 @@ test('Fences in lists and blockquotes hide their paths and nothing after them', 
     ),
     ['/work/app/out/a.md', '/work/app/out/b.md'],
   );
+  // A fence ends with the quote or list holding it; an indented block is code too.
+  assert.deepEqual(
+    mentionedFiles(
+      [
+        '> ~~~text',
+        '> `/work/app/q.md`',
+        '',
+        '보고서: `/work/app/out/report.md`',
+        '',
+        '    `/work/app/indented.md`',
+      ].join('\n'),
+    ),
+    ['/work/app/out/report.md'],
+  );
 });
 
 test('The two reported replies: open in a fenced block and a table of paths under ~/.claude/skills', () => {

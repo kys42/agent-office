@@ -2,6 +2,7 @@ import os from 'node:os';
 import { wrappedPatches } from './working-location.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import type { OutputCandidate } from '../../src/shared/types.js';
 import {
   ARTIFACT_LINKS,
@@ -101,38 +102,31 @@ const word = (w: string) =>
     .replace(/^'(.*)'$/s, '$1')
     .replace(/\\(.)/g, '$1');
 
-/**
- * The text outside fenced code blocks (``` or ~~~, to a closing fence at least as long, or the
- * end). A fence may open in a blockquote or a list item (`> ```, `- ```, `1. ```); it closes only
- * at the same quote depth, so a quoted fence shown inside another block stays its content.
- */
-export function withoutFences(text: string): string {
-  const kept: string[] = [];
-  let open: { char: string; size: number; depth: number } | undefined;
-  for (const line of text.split(/\r?\n/)) {
-    if (open) {
-      // Past the opening's own quote markers only: a list item's fence closes indented.
-      let body = line;
-      for (let d = 0; d < open.depth; d++) body = body.replace(/^[ \t]*>/, '');
-      const close = /^[ \t]*(`{3,}|~{3,})[ \t]*$/.exec(body);
-      if (close && close[1][0] === open.char && close[1].length >= open.size) open = undefined;
-      continue;
-    }
-    const lead = /^((?:[ \t]*>)*)[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?/.exec(line)!;
-    const fence = /^(`{3,}|~{3,})(.*)$/.exec(line.slice(lead[0].length));
-    if (fence && !(fence[1][0] === '`' && fence[2].includes('`')))
-      open = {
-        char: fence[1][0],
-        size: fence[1].length,
-        depth: (lead[1].match(/>/g) ?? []).length,
-      };
-    else kept.push(line);
-  }
-  return kept.join('\n');
-}
-
 /** A local file named alone in inline code: absolute, `~/`, a drive path or a `file://` URL. */
 const INLINE_PATH = /^(?:\/(?!\/)|~\/|[A-Za-z]:[\\/]|file:\/\/)/;
+/** A code span that may hold one: replies without one are not parsed as Markdown. */
+const MAYBE_INLINE_PATH = /`[ \t]*(?:\/(?!\/)|~\/|[A-Za-z]:[\\/]|file:\/\/)/;
+/** Replies longer than this are not parsed as Markdown for inline paths. */
+const MAX_MARKDOWN = 64 * 1024;
+
+/**
+ * The inline code spans of a reply, as Markdown reads them: code blocks (fenced or indented, in
+ * lists and quotes too) are no spans, so their paths never show up here.
+ */
+function inlineCode(text: string): string[] {
+  if (text.length > MAX_MARKDOWN || !MAYBE_INLINE_PATH.test(text)) return [];
+  const out: string[] = [];
+  const walk = (n: { type: string; value?: unknown; children?: unknown[] }) => {
+    if (n.type === 'inlineCode' && typeof n.value === 'string') out.push(n.value);
+    else if (Array.isArray(n.children)) for (const c of n.children) walk(c as typeof n);
+  };
+  try {
+    walk(fromMarkdown(text));
+  } catch {
+    return [];
+  }
+  return out;
+}
 
 /**
  * Files a reply points the person to: `open <path>` (options before it skipped, `-a App` with
@@ -170,8 +164,8 @@ export function mentionedFiles(text: string): string[] {
     }
     out.push(p);
   }
-  for (const m of withoutFences(text).matchAll(/(?<!`)(`{1,2})(?!`)([^`\n]+?)(?<!`)\1(?!`)/g)) {
-    let p = m[2].trim().replace(/:\d+(?::\d+)?$/, '');
+  for (const code of inlineCode(text)) {
+    let p = code.trim().replace(/:\d+(?::\d+)?$/, '');
     // One path alone: not a command, not two paths, not a folder (the extension is judged later).
     if (!INLINE_PATH.test(p) || /\s(?:\/|~\/|[A-Za-z]:[\\/])/.test(p)) continue;
     try {
