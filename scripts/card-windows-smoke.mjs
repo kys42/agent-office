@@ -113,10 +113,11 @@ try {
   const visible = async (p) => (await app.browserWindow(p)).evaluate((w) => w.isVisible());
   const bounds = async (p) => (await app.browserWindow(p)).evaluate((w) => w.getBounds());
   const cardsCount = () => app.windows().filter((p) => p.url().endsWith('#card')).length;
-  // macOS: a card panel (preview, pinned, on top) takes the keyboard as itself. Opening one from the
-  // desk, or pressing into its text box (`card('focus')`), never activates the whole app, which
-  // would switch to the Space of the big office window. Only a card in its own window does
-  // (`cardActivatesApp`); that is not opened here.
+  // macOS: a card panel (preview, pinned, on top) made key while another app is active only blinks
+  // its cursor, so opening one or pressing into its text box (`card('focus')`) activates the app
+  // (#417) — but only while that cannot switch to the Space of another window: here the big office
+  // is hidden behind the desk panel, so the first card does. Once a plain pinned card (an ordinary,
+  // single-Space window) is shown, the next panels never activate (`cardActivatesApp`).
   if (process.platform === 'darwin')
     await app.evaluate(({ app }) => {
       globalThis.cardAppFocusCalls = 0;
@@ -126,15 +127,20 @@ try {
         return focus(...args);
       };
     });
+  const appFocusCalls = () => app.evaluate(() => globalThis.cardAppFocusCalls);
   const panelsNeverActivate = async (where) => {
     if (process.platform !== 'darwin') return;
-    assert.equal(await app.evaluate(() => globalThis.cardAppFocusCalls), 0, where);
+    assert.equal(await appFocusCalls(), 0, where);
   };
   const a = await newCard('codex:codex-test');
   const aw = await app.browserWindow(a);
   if (process.platform === 'darwin')
     assert.equal(await aw.evaluate((w) => w.isVisibleOnAllWorkspaces()), true);
-  await panelsNeverActivate('opening the preview card and focusing its text box');
+  if (process.platform === 'darwin')
+    assert.ok(
+      (await appFocusCalls()) > 0,
+      'a card opened from the desk panel, the big office hidden, activates the app',
+    );
   const desired = await app.evaluate(({ screen }) => {
     const area = screen.getPrimaryDisplay().workArea;
     return { x: area.x + 40, y: area.y + 40, width: 500, height: Math.min(640, area.height - 40) };
@@ -161,6 +167,8 @@ try {
   // Pinned means kept open, not kept on top: other windows may cover it.
   assert.equal(await aw.evaluate((w) => w.isAlwaysOnTop()), false, 'a pinned card is ordinary');
   const titleA = await a.locator('.card-head h2').textContent();
+  // A is pinned now: an ordinary window maybe on another Space. From here no panel activates.
+  if (process.platform === 'darwin') await app.evaluate(() => (globalThis.cardAppFocusCalls = 0));
   const b = await newCard('claude:claude-test');
   await b.locator('.card-head .card-pin').click();
   await expect(b.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'true');

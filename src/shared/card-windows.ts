@@ -82,15 +82,27 @@ export function cardOwnWindow(pin: CardPin) {
   return pin === 'window';
 }
 
+/** Another window of the app, as `cardActivatesApp` weighs it. */
+export interface OtherAppWindow {
+  visible: boolean;
+  minimized: boolean;
+  /** Shown on every Space (`isVisibleOnAllWorkspaces`): the desk panel, a floating card. */
+  allSpaces: boolean;
+}
+
 /**
  * macOS: whether bringing a card forward also activates the whole app (`app.focus({ steal })`).
- * Only a card in its own window does: an ordinary app window takes the keys only while its app is
- * active. A card panel (`type: 'panel'`, non-activating, on every Space while it floats) takes
- * the keyboard as itself; activating the app there would also switch macOS to the Space holding
- * the big office window, away from the desk the card was opened from.
+ * A card in its own window always does: an ordinary app window takes the keys only while its app
+ * is active. A card panel (`type: 'panel'`, non-activating) made key while another app is active
+ * only blinks its cursor: the keys (and Korean composition) still go to that app. So a panel
+ * activates the app too, unless that could move the screen: activating shows the Space of the
+ * app's other windows (the big office's), so only when every other window shown is on every Space
+ * or none is shown (the desk panel alone, the big office hidden). Otherwise the panel stays as it
+ * is and takes the keys once pressed.
  */
-export function cardActivatesApp(pin: CardPin) {
-  return cardOwnWindow(pin);
+export function cardActivatesApp(pin: CardPin, others: readonly OtherAppWindow[]) {
+  if (cardOwnWindow(pin)) return true;
+  return others.every((w) => !w.visible || w.minimized || w.allSpaces);
 }
 
 /**
