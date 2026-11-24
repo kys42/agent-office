@@ -103,20 +103,29 @@ const word = (w: string) =>
 
 /**
  * The text outside fenced code blocks (``` or ~~~, to a closing fence at least as long, or the
- * end). A fence may sit in a blockquote or a list item (`> ```, `- ```, `1. ```): its line is
- * read past those markers.
+ * end). A fence may open in a blockquote or a list item (`> ```, `- ```, `1. ```); it closes only
+ * at the same quote depth, so a quoted fence shown inside another block stays its content.
  */
 export function withoutFences(text: string): string {
   const kept: string[] = [];
-  let open: { char: string; size: number } | undefined;
-  for (const line of text.split('\n')) {
-    const body = line.replace(/^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?/, '');
-    const fence = /^(`{3,}|~{3,})(.*)$/.exec(body);
+  let open: { char: string; size: number; depth: number } | undefined;
+  for (const line of text.split(/\r?\n/)) {
     if (open) {
-      if (fence && fence[1][0] === open.char && fence[1].length >= open.size && !fence[2].trim())
-        open = undefined;
-    } else if (fence && !(fence[1][0] === '`' && fence[2].includes('`')))
-      open = { char: fence[1][0], size: fence[1].length };
+      // Past the opening's own quote markers only: a list item's fence closes indented.
+      let body = line;
+      for (let d = 0; d < open.depth; d++) body = body.replace(/^[ \t]*>/, '');
+      const close = /^[ \t]*(`{3,}|~{3,})[ \t]*$/.exec(body);
+      if (close && close[1][0] === open.char && close[1].length >= open.size) open = undefined;
+      continue;
+    }
+    const lead = /^((?:[ \t]*>)*)[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?/.exec(line)!;
+    const fence = /^(`{3,}|~{3,})(.*)$/.exec(line.slice(lead[0].length));
+    if (fence && !(fence[1][0] === '`' && fence[2].includes('`')))
+      open = {
+        char: fence[1][0],
+        size: fence[1].length,
+        depth: (lead[1].match(/>/g) ?? []).length,
+      };
     else kept.push(line);
   }
   return kept.join('\n');

@@ -605,6 +605,23 @@ test('Fences in lists and blockquotes hide their paths and nothing after them', 
     ),
     ['/work/app/out/after.md'],
   );
+  // A quoted fence shown inside a fence is its content; CRLF replies read the same.
+  assert.deepEqual(
+    mentionedFiles(
+      [
+        '```md',
+        '> ```',
+        '`/work/app/quoted.md`',
+        '```',
+        '`/work/app/out/a.md`',
+        '```',
+        '`/work/app/crlf.md`',
+        '```',
+        '`/work/app/out/b.md`',
+      ].join('\r\n'),
+    ),
+    ['/work/app/out/a.md', '/work/app/out/b.md'],
+  );
 });
 
 test('The two reported replies: open in a fenced block and a table of paths under ~/.claude/skills', () => {
