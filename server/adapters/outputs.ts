@@ -2,6 +2,7 @@ import os from 'node:os';
 import { wrappedPatches } from './working-location.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import type { OutputCandidate } from '../../src/shared/types.js';
 import {
   ARTIFACT_LINKS,
@@ -25,9 +26,18 @@ const MAX_CANDIDATES = 200;
  * The absolute path of an output file, or null when it doesn't count: not a document kind, a
  * project config, or inside a hidden, dependency, VCS, build or test-results folder. Inside the
  * session's own folder only the part below it is judged (a session may work in a hidden worktree
- * folder); elsewhere the whole path is (`~/.claude/plans/…` is not an output).
+ * folder); elsewhere the whole path is (a tool writing into `~/.claude/plans/…` makes no output).
+ * A file a reply points to (`named`) may sit in a hidden folder (`~/.claude/skills/…/README.md`,
+ * even `~/.claude/plans/x.md`): the reply chose to show it, and the collector still asks that it
+ * was born during the conversation. Excluded folders (`.git`, `.local`, `node_modules`, …) and
+ * hidden file names never count.
  */
-export function outputFile(raw: unknown, cwd?: string | null, home = os.homedir()): string | null {
+export function outputFile(
+  raw: unknown,
+  cwd?: string | null,
+  home = os.homedir(),
+  named = false,
+): string | null {
   if (typeof raw !== 'string') return null;
   let p = raw.trim();
   if (!p || p.length > 4096 || /[\x00-\x1f]/.test(p)) return null;
@@ -48,7 +58,7 @@ export function outputFile(raw: unknown, cwd?: string | null, home = os.homedir(
   const below = root && p.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
   const rel = below ? p.slice(root!.length) : p;
   const dirs = rel.split(/[\\/]/).slice(0, -1).filter(Boolean);
-  if (dirs.some((d) => d.startsWith('.') || OUTPUT_EXCLUDED_DIRS.has(d))) return null;
+  if (dirs.some((d) => (!named && d.startsWith('.')) || OUTPUT_EXCLUDED_DIRS.has(d))) return null;
   return p;
 }
 
@@ -92,10 +102,38 @@ const word = (w: string) =>
     .replace(/^'(.*)'$/s, '$1')
     .replace(/\\(.)/g, '$1');
 
+/** A local file named alone in inline code: absolute, `~/`, a drive path or a `file://` URL. */
+const INLINE_PATH = /^(?:\/(?!\/)|~\/|[A-Za-z]:[\\/]|file:\/\/)/;
+/** A code span that may hold one: replies without one are not parsed as Markdown. */
+const MAYBE_INLINE_PATH = /`[ \t]*(?:\/(?!\/)|~\/|[A-Za-z]:[\\/]|file:\/\/)/;
+/** Replies longer than this are not parsed as Markdown for inline paths. */
+const MAX_MARKDOWN = 64 * 1024;
+
+/**
+ * The inline code spans of a reply, as Markdown reads them: code blocks (fenced or indented, in
+ * lists and quotes too) are no spans, so their paths never show up here.
+ */
+function inlineCode(text: string): string[] {
+  if (text.length > MAX_MARKDOWN || !MAYBE_INLINE_PATH.test(text)) return [];
+  const out: string[] = [];
+  const walk = (n: { type: string; value?: unknown; children?: unknown[] }) => {
+    if (n.type === 'inlineCode' && typeof n.value === 'string') out.push(n.value);
+    else if (Array.isArray(n.children)) for (const c of n.children) walk(c as typeof n);
+  };
+  try {
+    walk(fromMarkdown(text));
+  } catch {
+    return [];
+  }
+  return out;
+}
+
 /**
  * Files a reply points the person to: `open <path>` (options before it skipped, `-a App` with
- * its app) and markdown links to a local path. Only absolute (or `~/`) paths: a relative one
- * says nothing certain about where it is.
+ * its app), markdown links to a local path, and inline code holding one path alone
+ * (`` `/abs/report.md` ``, as in a table of results; a trailing `:line` is dropped). Only
+ * absolute (or `~/`) paths: a relative one says nothing certain about where it is. Inside fenced
+ * code blocks only `open` counts: a listing or a script there names files, it doesn't show them.
  */
 export function mentionedFiles(text: string): string[] {
   const out: string[] = [];
@@ -121,6 +159,17 @@ export function mentionedFiles(text: string): string[] {
     try {
       // fileURLToPath: drive letters and escapes as the platform names them (file:///C:/x → C:\x).
       p = p.startsWith('file://') ? fileURLToPath(p) : decodeURI(p);
+    } catch {
+      continue;
+    }
+    out.push(p);
+  }
+  for (const code of inlineCode(text)) {
+    let p = code.trim().replace(/:\d+(?::\d+)?$/, '');
+    // One path alone: not a command, not two paths, not a folder (the extension is judged later).
+    if (!INLINE_PATH.test(p) || /\s(?:\/|~\/|[A-Za-z]:[\\/])/.test(p)) continue;
+    try {
+      if (p.startsWith('file://')) p = fileURLToPath(p);
     } catch {
       continue;
     }
@@ -274,7 +323,7 @@ export class OutputTracker {
     if (!text) return;
     const from = eventId ? { eventId } : {};
     for (const raw of mentionedFiles(text)) {
-      const key = outputFile(raw, cwd);
+      const key = outputFile(raw, cwd, undefined, true);
       if (key) this.add({ key, kind: 'file', at, via: 'mention', ...from });
     }
     this.links(text, at, eventId);

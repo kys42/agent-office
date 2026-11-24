@@ -504,6 +504,185 @@ test('Replies point to files with open and markdown links; Artifact links come w
   assert.equal(claudeArtifactLink('javascript:alert(1)'), null);
 });
 
+test('A file a reply points to counts in a hidden folder; tool writes there and excluded folders do not', () => {
+  const home = '/home/me';
+  const skill =
+    '/home/me/.claude/skills/work-manager/projects/gw/features/01-orchestrator/README.md';
+  // Named in a reply: the hidden folder no longer hides it, `~/` included.
+  assert.equal(outputFile(skill, cwd, home, true), skill);
+  assert.equal(
+    outputFile('~/.claude/skills/work-manager/projects/gw/REPORT.html', cwd, home, true),
+    '/home/me/.claude/skills/work-manager/projects/gw/REPORT.html',
+  );
+  // A plan the reply shows is one too (the collector still asks it was born in the conversation).
+  assert.equal(
+    outputFile('/home/me/.claude/plans/plan.md', cwd, home, true),
+    '/home/me/.claude/plans/plan.md',
+  );
+  // A tool writing there makes no output.
+  assert.equal(outputFile(skill, cwd, home), null);
+  assert.equal(outputFile('/home/me/.claude/plans/plan.md', cwd, home), null);
+  // What never counts still doesn't: excluded folders, hidden names, kinds, shares.
+  for (const dir of [
+    'node_modules/x',
+    '.git',
+    'test-results',
+    'playwright-report',
+    'coverage',
+    'dist',
+    'build',
+    '.local/shots',
+  ])
+    assert.equal(
+      outputFile(`/home/me/.claude/skills/s/${dir}/page.md`, cwd, home, true),
+      null,
+      dir,
+    );
+  assert.equal(outputFile('/home/me/.claude/skills/s/.notes.md', cwd, home, true), null);
+  assert.equal(outputFile('/home/me/.claude/skills/s/SKILL.ts', cwd, home, true), null);
+  assert.equal(outputFile('/home/me/.claude/skills/s/package.json', cwd, home, true), null);
+  assert.equal(outputFile('//server/.share/a.md', cwd, home, true), null);
+});
+
+test('Inline code holding one absolute path is a mention; fenced blocks only lend their open', () => {
+  const p = '/home/me/.claude/skills/work-manager/projects/gw';
+  assert.deepEqual(
+    mentionedFiles(
+      [
+        '| 기능 | 문서 |',
+        '|---|---|',
+        `| 오케스트레이터 | \`${p}/features/01-orchestrator/README.md\` |`,
+        `| 라우터 | \`\`~/notes/router.md\`\` |`,
+        '`C:\\work\\out\\a.pdf` · `file:///work/app/out/b.png` · `/work/app/out/c.md:12`',
+        // Not one path alone: a command, two paths, a share, a relative path, an unclosed span.
+        '`cat /work/app/x.md` `/work/app/y.md /work/app/z.md` `//srv/s.md` `docs/r.md` `/work/app/w.md',
+        '```',
+        `${p}/REPORT.html`,
+        `\`${p}/INDEX.md\``,
+        '```',
+        '~~~sh',
+        `open ${p}/OPEN.html`,
+        '~~~',
+      ].join('\n'),
+    ),
+    [
+      `${p}/OPEN.html`,
+      `${p}/features/01-orchestrator/README.md`,
+      '~/notes/router.md',
+      'C:\\work\\out\\a.pdf',
+      '/work/app/out/b.png',
+      '/work/app/out/c.md',
+    ],
+  );
+  // Folders and code are named too, but are no outputs.
+  const s = parseRecords(
+    [say(`폴더 \`/work/app/out/\` 와 코드 \`/work/app/src/a.ts\`, 문서 \`/work/app/out/d.md\``, 0)],
+    claudeOpts,
+  );
+  assert.deepEqual(keys(s), [['/work/app/out/d.md', 'mention']]);
+});
+
+test('Fences in lists and blockquotes hide their paths and nothing after them', () => {
+  assert.deepEqual(
+    mentionedFiles(
+      [
+        '1. 예시:',
+        '   ```',
+        '   `/work/app/in-list.md`',
+        '   ```',
+        '- ```sh',
+        '  `/work/app/in-item.md`',
+        '  ```',
+        '> ```',
+        '> `/work/app/in-quote.md`',
+        '> ```',
+        '````md',
+        '```',
+        '`/work/app/nested.md`',
+        '````',
+        '결과: `/work/app/out/after.md`',
+      ].join('\n'),
+    ),
+    ['/work/app/out/after.md'],
+  );
+  // A quoted fence shown inside a fence is its content; CRLF replies read the same.
+  assert.deepEqual(
+    mentionedFiles(
+      [
+        '```md',
+        '> ```',
+        '`/work/app/quoted.md`',
+        '```',
+        '`/work/app/out/a.md`',
+        '```',
+        '`/work/app/crlf.md`',
+        '```',
+        '`/work/app/out/b.md`',
+      ].join('\r\n'),
+    ),
+    ['/work/app/out/a.md', '/work/app/out/b.md'],
+  );
+  // A fence ends with the quote or list holding it; an indented block is code too.
+  assert.deepEqual(
+    mentionedFiles(
+      [
+        '> ~~~text',
+        '> `/work/app/q.md`',
+        '',
+        '보고서: `/work/app/out/report.md`',
+        '',
+        '    `/work/app/indented.md`',
+      ].join('\n'),
+    ),
+    ['/work/app/out/report.md'],
+  );
+});
+
+test('The two reported replies: open in a fenced block and a table of paths under ~/.claude/skills', () => {
+  const home = os.homedir();
+  const proj = path.join(home, '.claude/skills/work-manager/projects/demo');
+  // 1. `open` inside a fenced block.
+  const one = parseRecords(
+    [
+      say(
+        [
+          '정리했습니다. 아래로 열어 보세요.',
+          '```bash',
+          `open ${proj}/features/01/REPORT.html`,
+          '```',
+        ].join('\n'),
+        0,
+      ),
+    ],
+    claudeOpts,
+  );
+  assert.deepEqual(keys(one), [[`${proj}/features/01/REPORT.html`, 'mention']]);
+  // 2. A table with inline-code paths, then a listing in a fenced block (not shown files).
+  const two = parseRecords(
+    [
+      say(
+        [
+          '| 단계 | 문서 |',
+          '|---|---|',
+          `| 1 | \`${proj}/features/01-orchestrator/README.md\` |`,
+          `| 2 | \`${proj}/features/02-router/README.md\` |`,
+          '',
+          '```',
+          `${proj}/REPORT.html`,
+          `${proj}/INDEX.md`,
+          '```',
+        ].join('\n'),
+        0,
+      ),
+    ],
+    claudeOpts,
+  );
+  assert.deepEqual(keys(two), [
+    [`${proj}/features/01-orchestrator/README.md`, 'mention'],
+    [`${proj}/features/02-router/README.md`, 'mention'],
+  ]);
+});
+
 test('Transport fragments of one conversation keep every output once', () => {
   const first = parseRecords(
     [
