@@ -103,13 +103,24 @@ test('The card pin button cycles off → pinned → on top → off, each with it
   assert.equal(cardPinAction('top'), 'pin-top');
 });
 
-test('Only a card in its own window activates the app; a card panel keeps the current Space', () => {
+test('A card panel activates the app only when no other window could pull it to another Space', () => {
+  const dock = { visible: true, minimized: false, allSpaces: true };
+  const hiddenOffice = { visible: false, minimized: false, allSpaces: false };
+  const office = { visible: true, minimized: false, allSpaces: false };
+  const minimizedOffice = { visible: true, minimized: true, allSpaces: false };
   for (const pin of ['off', 'pinned', 'top'] as const) {
-    assert.equal(cardActivatesApp(pin), false, pin);
+    // Opened from the desk panel with the big office hidden: activating moves nothing, and without
+    // it the keys would stay with the app in front (#417).
+    assert.equal(cardActivatesApp(pin, [dock, hiddenOffice]), true, pin);
+    assert.equal(cardActivatesApp(pin, [dock, minimizedOffice]), true, pin);
+    assert.equal(cardActivatesApp(pin, []), true, pin);
+    // The big office (or a plain pinned card) shown, maybe on another Space: stay on this one.
+    assert.equal(cardActivatesApp(pin, [dock, office]), false, pin);
     // Those are the macOS panels: made non-activating when created.
     assert.equal(cardWindowStyle('darwin', cardOwnWindow(pin), 'popover', false).type, 'panel');
   }
-  assert.equal(cardActivatesApp('window'), true);
+  // An ordinary app window takes the keys only while its app is active: always.
+  assert.equal(cardActivatesApp('window', [dock, office]), true);
   assert.equal(
     cardWindowStyle('darwin', cardOwnWindow('window'), 'popover', false).type,
     undefined,

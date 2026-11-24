@@ -21,6 +21,7 @@ import {
   readCardPosition,
   readPinnedCards,
   type CardPin,
+  type OtherAppWindow,
   type PinnedCard,
 } from '../src/shared/card-windows.js';
 import { floatLayer } from '../src/shared/popup-window.js';
@@ -267,16 +268,17 @@ export class CardWindows {
   }
   /**
    * Gives the card the keyboard. `steal` (asked just now, not a late load or a closed sheet) lets
-   * a card in its own window activate the app first; a card panel never does (`cardActivatesApp`):
-   * it is made key as itself, so another app in front loses the keys without macOS leaving this
-   * Space for the big office's.
+   * it activate the app first (`cardActivatesApp`): always for a card in its own window, and for a
+   * card panel when that cannot leave this Space for the big office's (opened from the desk panel
+   * with the big office hidden). A panel made key without it only blinks its cursor while the
+   * keys go to the app in front.
    */
   private focus(e: Entry, steal = true) {
     if (e.window.isDestroyed()) return;
     if (quiet) return;
     // A card in its own window may be minimized to the Dock or taskbar: brought back first.
     if (e.window.isMinimized()) e.window.restore();
-    if (steal && process.platform === 'darwin' && cardActivatesApp(e.pin))
+    if (steal && process.platform === 'darwin' && cardActivatesApp(e.pin, otherWindows(e.window)))
       app.focus({ steal: true });
     e.window.focus();
     e.window.webContents.focus();
@@ -669,4 +671,15 @@ export class CardWindows {
       this.cancelHide(e);
     }
   }
+}
+
+/** The app's other windows, for whether activating it could move the screen to another Space. */
+function otherWindows(self: BrowserWindow): OtherAppWindow[] {
+  return BrowserWindow.getAllWindows()
+    .filter((w) => w !== self && !w.isDestroyed())
+    .map((w) => ({
+      visible: w.isVisible(),
+      minimized: w.isMinimized(),
+      allSpaces: w.isVisibleOnAllWorkspaces(),
+    }));
 }
