@@ -172,6 +172,31 @@ export function TermManagerWindow() {
     };
   }, [service, previewKey, hidden]);
 
+  // The selected session is not previewed: read its name once when chosen (its title and last
+  // prompt, for a row with no conversation), then follow its live view's title changes.
+  useEffect(() => {
+    if (!service || !selected || hidden) return;
+    if (!rowsRef.current.some((r) => r.id === selected && !r.exit)) return;
+    let alive = true;
+    void service
+      .preview([selected])
+      .then((next) => {
+        if (alive && next[selected]) setPreviews((before) => ({ ...before, ...next }));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [service, selected, hidden]);
+  const titleChanged = useCallback(
+    (session: string, title: string) =>
+      setPreviews((before) => ({
+        ...before,
+        [session]: { lines: before[session]?.lines ?? [], title: title.trim() },
+      })),
+    [],
+  );
+
   // The window's own keys, before the terminal sees them.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -381,7 +406,12 @@ export function TermManagerWindow() {
         <main className="term-manager-view">
           {target && !hidden ? (
             <Suspense fallback={null}>
-              <TermPanel key={target.session} target={target} embedded />
+              <TermPanel
+                key={target.session}
+                target={target}
+                embedded
+                onTitle={(title) => titleChanged(target.session, title)}
+              />
             </Suspense>
           ) : (
             <p className="term-manager-hint center">{hidden ? s.hidden : s.pick}</p>

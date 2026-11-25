@@ -1181,7 +1181,12 @@ function setupBuiltinViews(builtin: TermBuiltin) {
       windowOpen: (id) => ownWindows.has(id),
       agents: (sessions) => agentsIn(sessions, false),
       memory: rss,
-      project: (cwd) => folderProject(cwd, delivery.latest?.sessions ?? []),
+      project: (cwd) =>
+        folderProject(
+          cwd,
+          delivery.latest?.sessions ?? [],
+          delivery.latest?.preferences?.zoneRules ?? [],
+        ),
     });
   ipcMain.handle(
     'office:builtin-terminals',

@@ -7,9 +7,9 @@ import type {
   TermPreview,
   TermProject,
 } from '../src/shared/term-list.js';
-import type { Session } from '../src/shared/types.js';
+import type { Session, ZoneRule } from '../src/shared/types.js';
 import { projectKey } from '../src/shared/office.js';
-import { zoneLabel } from '../src/shared/zones.js';
+import { applyZone, zoneLabel } from '../src/shared/zones.js';
 import {
   parseManagerSession,
   parsePreviewRequest,
@@ -140,6 +140,7 @@ export interface OfficeConversation {
   title: string;
   updatedAt: number;
   project?: string;
+  branch?: string | null;
   agentName?: string;
   resident?: { name?: string } | null;
   relation?: { team?: string } | null;
@@ -162,17 +163,21 @@ export function conversationProject(c: OfficeConversation): TermProject {
   // The office's own grouping (custom areas, then the repository, then the folder).
   const session = { ...c, cwd: c.cwd ?? null, project: c.project ?? '' } as unknown as Session;
   const key = projectKey(session);
-  const name = zoneLabel(session) || path.basename(c.cwd ?? '') || key;
+  const name = zoneLabel(session) || c.workspace?.name || path.basename(c.cwd ?? '') || key;
   return { key, name };
 }
 
 /**
- * The office project a folder belongs to when no conversation runs in it: the one whose
- * repository or folder holds it (the deepest), from the office's local conversations.
+ * The office project a folder belongs to when no conversation runs in it: the office's local
+ * conversation whose folder, worktree or repository holds it (the deepest) gives the repository,
+ * and the office's own area rules (`rules`) are applied to this folder itself. A rule that holds
+ * that conversation but not this folder (a narrower path, its worktree, its own session) does not
+ * carry over: only the repository does.
  */
 export function folderProject(
   cwd: string,
   conversations: OfficeConversation[],
+  rules: ZoneRule[] = [],
 ): TermProject | null {
   const folder = path.resolve(cwd);
   const holds = (root: string | null | undefined) => {
@@ -182,19 +187,39 @@ export function folderProject(
       ? r.length
       : 0;
   };
-  let best: { depth: number; at: number; c: OfficeConversation } | null = null;
+  let best: { depth: number; at: number; c: OfficeConversation; sameTree: boolean } | null = null;
   for (const c of conversations) {
     if (c.remote) continue;
-    const depth = Math.max(
-      holds(c.cwd),
-      holds(c.workspace?.worktree),
-      c.workspace?.evidence === 'git-common-dir' ? holds(c.workspace.root) : 0,
-    );
+    const tree = Math.max(holds(c.cwd), holds(c.workspace?.worktree));
+    const repo = c.workspace?.evidence === 'git-common-dir' ? holds(c.workspace.root) : 0;
+    const depth = Math.max(tree, repo);
     if (!depth) continue;
     if (!best || depth > best.depth || (depth === best.depth && c.updatedAt > best.at))
-      best = { depth, at: c.updatedAt, c };
+      best = { depth, at: c.updatedAt, c, sameTree: tree > 0 };
   }
-  return best ? conversationProject(best.c) : null;
+  if (!best) return null;
+  const { c, sameTree } = best;
+  // This folder as a session of its own: the conversation's repository, its worktree and branch
+  // only when the folder is inside that worktree, never its area or its id.
+  const own = {
+    ...c,
+    id: `term-folder:${folder}`,
+    cwd: folder,
+    area: undefined,
+    ...(sameTree
+      ? {}
+      : {
+          branch: null,
+          project: c.workspace?.name ?? c.project,
+          workspace: c.workspace && { ...c.workspace, worktree: null, git: undefined },
+        }),
+  } as unknown as Session;
+  const area = applyZone(own, rules).area;
+  if (area) return { key: area.key, name: area.name };
+  // No area of its own: the conversation's project (its folder's, or its repository's).
+  return conversationProject(
+    sameTree ? { ...c, area: undefined } : (own as unknown as OfficeConversation),
+  );
 }
 
 /** Where a provider's live conversation runs (its adapter's terminal lookup). */

@@ -152,7 +152,10 @@ async function setup(page: Page, options: Options = {}) {
             if (c.type === 'kill') return false;
           },
           input: () => {},
-          onData: () => () => {},
+          onData: (cb: (id: string, data: string) => void) => {
+            w.emitData = cb;
+            return () => {};
+          },
           onResync: () => () => {},
           onLost: () => () => {},
           onExit: () => () => {},
@@ -216,8 +219,10 @@ test('lists the sessions, shows the newest live and previews the others', async 
     'ao-2 earlier',
   );
   await expect(first.locator('.term-manager-preview')).toHaveCount(0);
-  const asked = await page.evaluate(() => (window as any).previews.at(-1));
-  expect(asked).toEqual(['ao-4', 'ao-2']);
+  // The others in one read; the selected one once on its own (for its name only).
+  const asked = await page.evaluate(() => (window as any).previews);
+  expect(asked).toContainEqual(['ao-4', 'ao-2']);
+  expect(asked).toContainEqual(['ao-1']);
   // A session printing since the last list is marked busy.
   await expect
     .poll(() =>
@@ -268,6 +273,26 @@ test('a session main chooses (a jump) is shown, also while open', async ({ page 
   await expect.poll(() => screenText(page)).toContain('restored-ao-2');
   await page.evaluate(() => (window as any).mainSelects('ao-1'));
   await expect.poll(() => live(page)).toEqual(['ao-1']);
+});
+
+test('a selected session with no conversation is still named, and follows its title', async ({
+  page,
+}) => {
+  await setup(page, { selected: 'ao-2' });
+  await expect.poll(() => screenText(page)).toContain('restored-ao-2');
+  const name = list(page).locator('li[data-term-session="ao-2"] b');
+  // Read once when chosen (it is never among the previews while selected).
+  await expect(name).toHaveText('npm run dev');
+  expect(await page.evaluate(() => (window as any).previews)).toContainEqual(['ao-2']);
+  // Its program sets a title on the live view: the row follows, with no extra read.
+  const reads = await page.evaluate(() => (window as any).previews.length);
+  await page.evaluate(
+    (view) => (window as any).emitData(view, '\x1b]0;dev server\x07'),
+    VIEWS['ao-2'],
+  );
+  await expect(name).toHaveText('dev server');
+  await expect(name).toHaveAttribute('data-title-source', 'terminal');
+  expect(await page.evaluate(() => (window as any).previews.length)).toBeLessThanOrEqual(reads + 1);
 });
 
 test('nothing is read while the window is hidden', async ({ page }) => {

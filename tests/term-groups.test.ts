@@ -292,3 +292,45 @@ test('previews carry the program title, cleaned, and nothing while hidden', asyn
   hidden = true;
   assert.deepEqual(await managerPreviews(deps, ['ao-1']), {});
 });
+
+test('an unlinked folder gets the area rules that hold it, not its neighbour’s', () => {
+  const workspace = {
+    key: 'repo:mono',
+    name: 'mono',
+    root: '/repo',
+    worktree: '/repo',
+    evidence: 'git-common-dir' as const,
+  };
+  const ui = { key: 'area:UI', name: 'UI', ruleId: 'r1', match: 'path' as const };
+  const rules = [
+    { id: 'r1', name: 'UI', match: 'path' as const, value: '/repo/packages/ui' },
+    { id: 'r2', name: 'Mine', match: 'session' as const, value: 'c-ui' },
+  ];
+  // The only conversation sits in the UI area (by its path, and by its own session rule).
+  const list = [conv({ id: 'c-ui', cwd: '/repo/packages/ui', workspace, area: ui })];
+  assert.deepEqual(folderProject('/repo/packages/ui/src', list, rules), {
+    key: 'area:UI',
+    name: 'UI',
+  });
+  // A sibling folder of the same repository: the repository, not the UI area.
+  assert.deepEqual(folderProject('/repo/docs', list, rules), { key: 'repo:mono', name: 'mono' });
+  // A worktree rule holds only folders inside that worktree.
+  const wt = { ...workspace, worktree: '/wt/feat' };
+  const wtRules = [{ id: 'w', name: 'Feat', match: 'worktree' as const, value: '/wt/feat' }];
+  const wtList = [
+    conv({
+      id: 'c-wt',
+      cwd: '/wt/feat',
+      workspace: wt,
+      area: { key: 'area:Feat', name: 'Feat', ruleId: 'w', match: 'worktree' },
+    }),
+  ];
+  assert.deepEqual(folderProject('/wt/feat/src', wtList, wtRules), {
+    key: 'area:Feat',
+    name: 'Feat',
+  });
+  assert.deepEqual(folderProject('/repo/docs', wtList, wtRules), {
+    key: 'repo:mono',
+    name: 'mono',
+  });
+});
