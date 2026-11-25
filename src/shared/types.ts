@@ -1258,7 +1258,7 @@ export interface OfficeAPI {
     /** The session main has chosen for it (a jump opened it there), or null. */
     selected: () => Promise<string | null>;
     select: (session: string) => Promise<import('./term-view').TermTarget>;
-    preview: (sessions: string[]) => Promise<Record<string, string[]>>;
+    preview: (sessions: string[]) => Promise<Record<string, import('./term-list').TermPreview>>;
     act: (session: string, action: import('./term-list').BuiltinSessionAction) => Promise<boolean>;
     /** Main chose a session for it (a jump while it was open). */
     onSelect: (cb: (session: string) => void) => () => void;

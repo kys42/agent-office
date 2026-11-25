@@ -64,6 +64,7 @@ export const shell: Messages['shell'] = {
     hide: '창 숨기기',
     hideTitle: '이 세션의 개별 창을 닫아요 (세션은 계속 실행돼요)',
     kill: '종료',
+    group: (name, count) => `${name}: 세션 ${count}개`,
     keys: '⌘1–9 선택 · ⌘⇧[ ] 이동 · ⌘W 닫기',
     close: '닫기 (세션은 계속 실행돼요)',
   },

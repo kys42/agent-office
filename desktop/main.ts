@@ -37,6 +37,7 @@ import {
   type SessionWindows,
   type TermManagerDeps,
   officeAgentsIn,
+  folderProject,
   psRss,
   type TerminalLocator,
 } from './term-list.js';
@@ -1180,6 +1181,7 @@ function setupBuiltinViews(builtin: TermBuiltin) {
       windowOpen: (id) => ownWindows.has(id),
       agents: (sessions) => agentsIn(sessions, false),
       memory: rss,
+      project: (cwd) => folderProject(cwd, delivery.latest?.sessions ?? []),
     });
   ipcMain.handle(
     'office:builtin-terminals',

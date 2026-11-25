@@ -69,6 +69,7 @@ export const shell = {
     hide: 'Hide window',
     hideTitle: 'Close its own window (the session keeps running)',
     kill: 'End',
+    group: (name: string, count: number) => `${name}: ${count} session${count === 1 ? '' : 's'}`,
     keys: '⌘1–9 select · ⌘⇧[ ] move · ⌘W close',
     close: 'Close (the sessions keep running)',
   },

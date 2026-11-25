@@ -9,6 +9,7 @@ const VIEWS: Record<string, string> = {
   'ao-1': '0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b01',
   'ao-2': '0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b02',
   'ao-3': '0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b03',
+  'ao-4': '0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b04',
 };
 
 interface Options {
@@ -43,7 +44,10 @@ async function setup(page: Page, options: Options = {}) {
           id: 'ao-1',
           program: 'claude',
           cwd: '/Users/me/work/app',
-          agents: [{ id: 's1', name: '버터', provider: 'claude' }],
+          agents: [
+            { id: 's1', name: '버터', alias: '버터', title: '로그인 고치기', provider: 'claude' },
+          ],
+          project: { key: 'repo:app', name: 'app' },
           startedAt: now - 60_000,
           pid: 4242,
           rss: 214 * 1024 * 1024,
@@ -56,6 +60,7 @@ async function setup(page: Page, options: Options = {}) {
           program: 'codex',
           cwd: '/Users/me/work/b',
           agents: [],
+          project: { key: '/Users/me/work/b', name: 'b' },
           startedAt: now - 3600_000,
           pid: 4343,
           rss: 80 * 1024 * 1024,
@@ -68,6 +73,7 @@ async function setup(page: Page, options: Options = {}) {
           program: 'claude',
           cwd: '/Users/me/work/c',
           agents: [],
+          project: { key: '/Users/me/work/c', name: 'c' },
           startedAt: now - 7200_000,
           pid: 4444,
           exit: { code: 0, signal: null, at: now - 30_000 },
@@ -75,8 +81,22 @@ async function setup(page: Page, options: Options = {}) {
           attached: 0,
           output: 100,
         },
+        // A second Claude in the same project, known by its session title.
+        {
+          id: 'ao-4',
+          program: 'claude',
+          cwd: '/Users/me/work/app',
+          agents: [{ id: 's4', name: '테스트 정리', title: '테스트 정리', provider: 'claude' }],
+          project: { key: 'repo:app', name: 'app' },
+          startedAt: now - 120_000,
+          pid: 4545,
+          windowOpen: false,
+          attached: 0,
+          output: 100,
+        },
       ];
-      const masked = (r: any) => (privacy ? { ...r, program: '', cwd: '', agents: [] } : r);
+      const masked = (r: any) =>
+        privacy ? { ...r, program: '', cwd: '', agents: [], project: undefined } : r;
       w.office = {
         snapshot: async () => ({}),
         subscribe: () => () => {},
@@ -100,7 +120,15 @@ async function setup(page: Page, options: Options = {}) {
           },
           preview: async (ids: string[]) => {
             w.previews.push(ids);
-            return Object.fromEntries(ids.map((id) => [id, [`${id} earlier`, `${id} prompt ❯`]]));
+            return Object.fromEntries(
+              ids.map((id) => [
+                id,
+                {
+                  lines: [`${id} earlier`, `me@mac ${id} % npm run dev`],
+                  title: id === 'ao-4' ? '✳ Claude Code' : '',
+                },
+              ]),
+            );
           },
           act: async (id: string, what: string) => {
             w.acts.push([id, what]);
@@ -161,6 +189,20 @@ test('lists the sessions, shows the newest live and previews the others', async 
   const first = nav.locator('li[data-term-session="ao-1"]');
   await expect(first.getByText('버터')).toBeVisible();
   await expect(first.getByText('claude')).toBeVisible();
+  // Grouped by project, the most recent first; two Claude sessions told apart by name.
+  await expect(nav.locator('.term-manager-group-head')).toHaveText(['app2', 'b1', 'c1']);
+  expect(
+    await nav
+      .locator('li[data-term-session]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('data-term-session'))),
+  ).toEqual(['ao-1', 'ao-4', 'ao-2', 'ao-3']);
+  await expect(nav.locator('li[data-term-session="ao-4"] b')).toHaveText('테스트 정리');
+  // No conversation linked: what was typed at its prompt.
+  await expect(nav.locator('li[data-term-session="ao-2"] b')).toHaveText('npm run dev');
+  await expect(nav.locator('li[data-term-session="ao-2"] b')).toHaveAttribute(
+    'data-title-source',
+    'prompt',
+  );
   await expect(first.getByText('창 열림')).toBeVisible();
   await expect(first.getByText('214 MB')).toBeVisible();
   await expect(nav.locator('li[data-term-session="ao-2"]').getByText('뒤에서')).toBeVisible();
@@ -171,11 +213,11 @@ test('lists the sessions, shows the newest live and previews the others', async 
   expect(await live(page)).toEqual(['ao-1']);
   // The others: a few rows of their screen; the selected and the ended one have none.
   await expect(nav.locator('li[data-term-session="ao-2"] .term-manager-preview')).toContainText(
-    'ao-2 prompt ❯',
+    'ao-2 earlier',
   );
   await expect(first.locator('.term-manager-preview')).toHaveCount(0);
   const asked = await page.evaluate(() => (window as any).previews.at(-1));
-  expect(asked).toEqual(['ao-2']);
+  expect(asked).toEqual(['ao-4', 'ao-2']);
   // A session printing since the last list is marked busy.
   await expect
     .poll(() =>
@@ -183,6 +225,7 @@ test('lists the sessions, shows the newest live and previews the others', async 
     )
     .toBe('true');
   await page.screenshot({ path: '.local/term-manager.png', animations: 'disabled' });
+  await page.screenshot({ path: '.local/term-groups.png', animations: 'disabled' });
 });
 
 test('switching detaches the previous view, so only one is ever attached', async ({ page }) => {
@@ -204,7 +247,8 @@ test('⌘1 / ⌘2 and ⌘⇧] select rows; ⌘W closes the window only', async (
   await setup(page);
   await expect.poll(() => screenText(page)).toContain('restored-ao-1');
   await page.locator('.xterm').click();
-  await page.keyboard.press('Meta+2');
+  // The numbers follow the grouped order: app (ao-1, ao-4), then b (ao-2).
+  await page.keyboard.press('Meta+3');
   await expect(list(page).locator('li[data-term-session="ao-2"]')).toHaveAttribute(
     'aria-current',
     'true',
@@ -213,7 +257,7 @@ test('⌘1 / ⌘2 and ⌘⇧] select rows; ⌘W closes the window only', async (
   await page.keyboard.press('Meta+1');
   await expect.poll(() => live(page)).toEqual(['ao-1']);
   await page.keyboard.press('Meta+Shift+BracketRight');
-  await expect.poll(() => live(page)).toEqual(['ao-2']);
+  await expect.poll(() => live(page)).toEqual(['ao-4']);
   await page.keyboard.press('Meta+w');
   await expect.poll(() => page.evaluate(() => (window as any).windowCalls)).toContain('close');
   expect((await commands(page)).filter((c) => c.type === 'kill')).toHaveLength(0);
@@ -259,6 +303,8 @@ test('hidden screen content: no names, folders, previews or terminal', async ({ 
   await expect(nav.getByText('버터')).toHaveCount(0);
   await expect(nav.getByText('/Users/me')).toHaveCount(0);
   await expect(nav.getByText('~/work/app')).toHaveCount(0);
+  await expect(nav.locator('.term-manager-group-head')).toHaveCount(0);
+  await expect(nav.getByText('테스트 정리')).toHaveCount(0);
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => (window as any).previews.length)).toBe(0);
   expect(await page.evaluate(() => (window as any).selects.length)).toBe(0);

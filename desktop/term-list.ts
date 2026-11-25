@@ -4,8 +4,18 @@ import type {
   BuiltinSessionAction,
   BuiltinSessionAgent,
   BuiltinSessionRow,
+  TermPreview,
+  TermProject,
 } from '../src/shared/term-list.js';
-import { parseManagerSession, parsePreviewRequest, previewLines } from '../src/shared/term-list.js';
+import type { Session } from '../src/shared/types.js';
+import { projectKey } from '../src/shared/office.js';
+import { zoneLabel } from '../src/shared/zones.js';
+import {
+  parseManagerSession,
+  parsePreviewRequest,
+  previewLines,
+  TERM_MANAGER_PREVIEW_COLS,
+} from '../src/shared/term-list.js';
 import type { TermTarget } from '../src/shared/term-view.js';
 import type { ListResult, ScreenRead, SessionStats } from './term-host/protocol.js';
 
@@ -28,6 +38,8 @@ export interface TermListDeps {
   agents(sessions: { id: string; cwd: string }[]): Promise<Map<string, BuiltinSessionAgent[]>>;
   /** Resident memory in bytes by pid, for the ones that could be read (see `psRss`). */
   memory?(pids: number[]): Promise<Map<number, number>>;
+  /** The office project holding a folder no conversation was found in (see `folderProject`). */
+  project?(cwd: string): TermProject | null;
 }
 
 export async function builtinListing(deps: TermListDeps, fresh = true): Promise<BuiltinListing> {
@@ -59,11 +71,13 @@ export async function builtinListing(deps: TermListDeps, fresh = true): Promise<
   const sessions: BuiltinSessionRow[] = list.sessions
     .map((s) => {
       const rss = s.exit ? undefined : memory.get(s.pid);
+      const found = agents.get(s.id) ?? [];
       return {
         id: s.id,
         program: hidden ? '' : path.basename(s.argv[0] ?? ''),
         cwd: hidden ? '' : s.cwd,
-        agents: hidden ? [] : (agents.get(s.id) ?? []),
+        agents: hidden ? [] : found,
+        ...(!hidden && { project: rowProject(s.cwd, found, deps) }),
         startedAt: s.createdAt,
         pid: s.pid,
         ...(rss !== undefined && { rss }),
@@ -97,7 +111,25 @@ export async function builtinListing(deps: TermListDeps, fresh = true): Promise<
   };
 }
 
-/** A conversation of the office, as `officeAgentsIn` needs it. */
+/** A row's project: its conversation's, else the office's for its folder, else its folder. */
+function rowProject(
+  cwd: string,
+  agents: BuiltinSessionAgent[],
+  deps: Pick<TermListDeps, 'project'>,
+): TermProject {
+  const linked = agents.find((a) => a.project)?.project;
+  if (linked) return linked;
+  const known = (() => {
+    try {
+      return deps.project?.(cwd) ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  return known ?? { key: path.resolve(cwd), name: path.basename(cwd) || cwd };
+}
+
+/** A conversation of the office, as `officeAgentsIn` needs it (a snapshot session). */
 export interface OfficeConversation {
   id: string;
   provider: string;
@@ -107,6 +139,62 @@ export interface OfficeConversation {
   alias?: string | null;
   title: string;
   updatedAt: number;
+  project?: string;
+  agentName?: string;
+  resident?: { name?: string } | null;
+  relation?: { team?: string } | null;
+  workspace?: Session['workspace'];
+  area?: Session['area'];
+}
+
+/**
+ * What the office calls a conversation, besides its title: its resident name, the person's
+ * nickname for it (사무실 별명), a team member's name (its title is that name) or the agent's own
+ * name. Empty when it has none.
+ */
+export const officeNickname = (c: OfficeConversation) =>
+  (c.resident?.name || c.alias || (c.relation?.team ? c.title : '') || c.agentName || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** A conversation's project as the office groups it: its zone key and the zone's name. */
+export function conversationProject(c: OfficeConversation): TermProject {
+  // The office's own grouping (custom areas, then the repository, then the folder).
+  const session = { ...c, cwd: c.cwd ?? null, project: c.project ?? '' } as unknown as Session;
+  const key = projectKey(session);
+  const name = zoneLabel(session) || path.basename(c.cwd ?? '') || key;
+  return { key, name };
+}
+
+/**
+ * The office project a folder belongs to when no conversation runs in it: the one whose
+ * repository or folder holds it (the deepest), from the office's local conversations.
+ */
+export function folderProject(
+  cwd: string,
+  conversations: OfficeConversation[],
+): TermProject | null {
+  const folder = path.resolve(cwd);
+  const holds = (root: string | null | undefined) => {
+    if (!root) return 0;
+    const r = path.resolve(root);
+    return folder === r || folder.startsWith(r.endsWith(path.sep) ? r : r + path.sep)
+      ? r.length
+      : 0;
+  };
+  let best: { depth: number; at: number; c: OfficeConversation } | null = null;
+  for (const c of conversations) {
+    if (c.remote) continue;
+    const depth = Math.max(
+      holds(c.cwd),
+      holds(c.workspace?.worktree),
+      c.workspace?.evidence === 'git-common-dir' ? holds(c.workspace.root) : 0,
+    );
+    if (!depth) continue;
+    if (!best || depth > best.depth || (depth === best.depth && c.updatedAt > best.at))
+      best = { depth, at: c.updatedAt, c };
+  }
+  return best ? conversationProject(best.c) : null;
 }
 
 /** Where a provider's live conversation runs (its adapter's terminal lookup). */
@@ -143,7 +231,16 @@ export async function officeAgentsIn(
     const session = terminal?.host.kind === 'builtin' ? terminal.host.session : undefined;
     if (!session || !wanted.has(session)) continue;
     const list = found.get(session) ?? [];
-    list.push({ id: c.id, name: c.alias || c.title, provider: c.provider });
+    const alias = officeNickname(c);
+    list.push({
+      id: c.id,
+      name: alias || c.title,
+      provider: c.provider,
+      ...(alias && { alias }),
+      ...(c.title && { title: c.title }),
+      project: conversationProject(c),
+      updatedAt: c.updatedAt,
+    });
     found.set(session, list);
   }
   return found;
@@ -233,7 +330,11 @@ export interface TermManagerDeps {
   /** The daemon's list (`TermBuiltin.listing`); null when none runs. */
   listing(fresh: boolean): Promise<ListResult | null>;
   /** A live session's visible screen (`TermBuiltin.screen`). */
-  screen(session: string): Promise<{ lines: string[]; cursor?: Pick<ScreenRead['cursor'], 'y'> }>;
+  screen(session: string): Promise<{
+    lines: string[];
+    cursor?: Pick<ScreenRead['cursor'], 'y'>;
+    title?: string;
+  }>;
   /** The refusals said to the person. */
   messages: { hidden: string; gone: string };
 }
@@ -253,26 +354,33 @@ export async function managerSelect(deps: TermManagerDeps, raw: unknown): Promis
 }
 
 /**
- * Previews of a few running sessions: the last rows of each visible screen (`previewLines`).
+ * Previews of a few running sessions: the last rows of each visible screen (`previewLines`) and
+ * the title its program set (a row's name when no conversation is linked).
  * Unknown or ended sessions, and screens that could not be read, are left out; while screen
  * content is hidden (before or after the reads) nothing is answered.
  */
 export async function managerPreviews(
   deps: TermManagerDeps,
   raw: unknown,
-): Promise<Record<string, string[]>> {
+): Promise<Record<string, TermPreview>> {
   const wanted = parsePreviewRequest(raw);
   if (!wanted.length || deps.hidden()) return {};
   const live = new Set(
     (await deps.listing(false))?.sessions.filter((s) => !s.exit).map((s) => s.id) ?? [],
   );
-  const out: Record<string, string[]> = {};
+  const out: Record<string, TermPreview> = {};
   await Promise.all(
     wanted
       .filter((id) => live.has(id))
       .map(async (id) => {
         const screen = await deps.screen(id).catch(() => null);
-        if (screen) out[id] = previewLines(screen);
+        if (!screen) return;
+        // eslint-disable-next-line no-control-regex
+        const title = (screen.title ?? '').replace(/[\x00-\x1f\x7f]/g, '').trim();
+        out[id] = {
+          lines: previewLines(screen),
+          ...(title && { title: title.slice(0, TERM_MANAGER_PREVIEW_COLS) }),
+        };
       }),
   );
   return deps.hidden() ? {} : out;
