@@ -25,8 +25,18 @@ type Status = 'connecting' | 'live' | 'away' | 'ended' | 'error';
  * the daemon keeps, then live output, and keys back to it. The view attaches only while the
  * window is shown; hidden, it detaches and nothing streams, and shown again it starts from the
  * daemon's screen. All terminal state lives in the daemon: closing the window loses nothing.
+ *
+ * `embedded`: drawn inside the terminal manager (TermManager), which owns the window's own
+ * buttons (on top, close). Its commands name the session, so main never attaches or ends one
+ * the manager has already switched away from.
  */
-export default function TermPanel({ target }: { target: TermTarget }) {
+export default function TermPanel({
+  target,
+  embedded = false,
+}: {
+  target: TermTarget;
+  embedded?: boolean;
+}) {
   const { t } = useI18n();
   const term = api.term!;
   const host = useRef<HTMLDivElement>(null);
@@ -35,7 +45,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const chrome = useTermChrome();
-  const onTop = usePopupOnTop(term.window);
+  const onTop = usePopupOnTop(embedded ? undefined : term.window);
 
   // The page's own shortcuts must not see terminal keys.
   useEffect(() => {
@@ -194,7 +204,11 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       setError('');
       const wanted = size();
       try {
-        const a = await term.command({ type: 'attach', ...wanted });
+        const a = await term.command({
+          type: 'attach',
+          ...wanted,
+          ...(embedded && { session: target.session }),
+        });
         // Gone or hidden meanwhile (before or while its screen was parsed): let go of it.
         const leave = () => {
           if (!a.exited) void term.command({ type: 'detach', viewId: a.viewId }).catch(() => {});
@@ -276,7 +290,7 @@ export default function TermPanel({ target }: { target: TermTarget }) {
   const hide = () => void term.window('close').catch(() => window.close());
   const kill = async () => {
     try {
-      await term.command({ type: 'kill' });
+      await term.command({ type: 'kill', ...(embedded && { session: target.session }) });
     } catch (e) {
       setNote((e as Error).message);
     }
@@ -306,22 +320,26 @@ export default function TermPanel({ target }: { target: TermTarget }) {
           <Power size={12} />
           {t.shell.kill}
         </button>
-        <OnTopButton
-          className="mini-shell-btn icon"
-          size={13}
-          on={onTop.on}
-          busy={onTop.busy}
-          onToggle={() => void onTop.toggle().catch((e: Error) => setNote(e.message))}
-        />
-        <button
-          type="button"
-          className="mini-shell-btn hide"
-          title={t.shell.term.hideTitle(isMac ? '⌘W' : '')}
-          onClick={hide}
-        >
-          <EyeOff size={12} />
-          {t.shell.term.hide}
-        </button>
+        {!embedded && (
+          <>
+            <OnTopButton
+              className="mini-shell-btn icon"
+              size={13}
+              on={onTop.on}
+              busy={onTop.busy}
+              onToggle={() => void onTop.toggle().catch((e: Error) => setNote(e.message))}
+            />
+            <button
+              type="button"
+              className="mini-shell-btn hide"
+              title={t.shell.term.hideTitle(isMac ? '⌘W' : '')}
+              onClick={hide}
+            >
+              <EyeOff size={12} />
+              {t.shell.term.hide}
+            </button>
+          </>
+        )}
       </header>
       <div className="mini-shell-body">
         <div ref={host} className="mini-shell-term" />

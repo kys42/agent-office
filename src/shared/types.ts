@@ -572,6 +572,11 @@ export interface Preferences {
    * Missing: on.
    */
   builtinTerminalWindow?: boolean;
+  /**
+   * Desktop: where "go to its terminal" opens a built-in session: the terminal manager (one
+   * window, one live view at a time) or that session's own window. Missing: the manager.
+   */
+  builtinTerminalOpenIn?: import('./term-list').BuiltinOpenIn;
   /** Size of reading text (#246) in every window. Missing: `normal`. */
   textSize?: TextSize;
   /** Font of reading text (#246); pixel lettering keeps its own. Missing: `system`. */
@@ -1239,6 +1244,24 @@ export interface OfficeAPI {
   builtinTerminals?: {
     list: () => Promise<import('./term-list').BuiltinListing>;
     act: (session: string, action: import('./term-list').BuiltinSessionAction) => Promise<boolean>;
+    /** Opens (or brings forward) the terminal manager. */
+    manager?: () => Promise<string>;
+  };
+
+  /**
+   * Desktop (macOS/Linux), the terminal manager's window only (터미널 관리 창): the same list as
+   * Settings, choosing the one session its view attaches, a few rows of the others' screens,
+   * and the same actions (its own window, hiding it, ending it after main asks).
+   */
+  termManager?: {
+    list: () => Promise<import('./term-list').BuiltinListing>;
+    /** The session main has chosen for it (a jump opened it there), or null. */
+    selected: () => Promise<string | null>;
+    select: (session: string) => Promise<import('./term-view').TermTarget>;
+    preview: (sessions: string[]) => Promise<Record<string, string[]>>;
+    act: (session: string, action: import('./term-list').BuiltinSessionAction) => Promise<boolean>;
+    /** Main chose a session for it (a jump while it was open). */
+    onSelect: (cb: (session: string) => void) => () => void;
   };
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */

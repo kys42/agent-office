@@ -10,6 +10,7 @@ import { DockCard } from './components/DockCard';
 import { SettingsWindow } from './components/SettingsWindow';
 import { ShellWindow } from './components/ShellWindow';
 import { TermWindow } from './components/TermWindow';
+import { TermManagerWindow } from './components/TermManager';
 import { ReaderWindow } from './components/ReaderWindow';
 import { bootLocale, useI18n } from './lib/i18n';
 import { isWindows } from './lib/platform';
@@ -75,6 +76,7 @@ const settings = /^#settings(=|$)/.test(location.hash);
 const shellWindow = location.hash === '#shell';
 const readerWindow = location.hash === '#reader';
 const termWindow = location.hash === '#term';
+const termManager = location.hash === '#terms';
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <Boundary>
     {card ? (
@@ -87,6 +89,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ReaderWindow />
     ) : termWindow ? (
       <TermWindow />
+    ) : termManager ? (
+      <TermManagerWindow />
     ) : dock ? (
       <DeskDock />
     ) : (

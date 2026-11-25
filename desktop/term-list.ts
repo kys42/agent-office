@@ -5,7 +5,9 @@ import type {
   BuiltinSessionAgent,
   BuiltinSessionRow,
 } from '../src/shared/term-list.js';
-import type { ListResult } from './term-host/protocol.js';
+import { parseManagerSession, parsePreviewRequest, previewLines } from '../src/shared/term-list.js';
+import type { TermTarget } from '../src/shared/term-view.js';
+import type { ListResult, ScreenRead, SessionStats } from './term-host/protocol.js';
 
 /**
  * Settings › 내장 터미널: the sessions the app's terminal host daemon keeps running in the
@@ -68,6 +70,7 @@ export async function builtinListing(deps: TermListDeps, fresh = true): Promise<
         ...(s.exit && { exit: { code: s.exit.code, signal: s.exit.signal, at: s.exit.at } }),
         windowOpen: deps.windowOpen(s.id),
         attached: s.attached,
+        ...(typeof s.bytesIn === 'number' && { output: s.bytesIn }),
       };
     })
     // Running first, newest first; ended ones after, most recently ended first.
@@ -194,4 +197,64 @@ export async function builtinAction(
     case 'kill':
       return deps.kill(session);
   }
+}
+
+/** What runs in a built-in session, for a terminal's header: the agent and its folder. */
+export const termTitle = (s: Pick<SessionStats, 'argv' | 'cwd'>) =>
+  `${path.basename(s.argv[0] ?? '')} · ${path.basename(s.cwd) || s.cwd}`;
+
+/**
+ * The terminal manager's requests (터미널 관리 창, docs/development/TERM-HOST.md): choosing the
+ * session it shows and reading previews of the others. The window names sessions, so each is
+ * checked here against the daemon's own list; nothing here starts a daemon.
+ */
+export interface TermManagerDeps {
+  /** Screen content is hidden (`preferences.privacy`). */
+  hidden(): boolean;
+  /** The daemon's list (`TermBuiltin.listing`); null when none runs. */
+  listing(fresh: boolean): Promise<ListResult | null>;
+  /** A live session's visible screen (`TermBuiltin.screen`). */
+  screen(session: string): Promise<{ lines: string[]; cursor?: Pick<ScreenRead['cursor'], 'y'> }>;
+  /** The refusals said to the person. */
+  messages: { hidden: string; gone: string };
+}
+
+/**
+ * Selects a session for the manager to show: one the daemon lists (running, or ended with its
+ * last screen still kept). Refused while screen content is hidden. Answers what its header shows.
+ */
+export async function managerSelect(deps: TermManagerDeps, raw: unknown): Promise<TermTarget> {
+  const session = parseManagerSession(raw);
+  if (deps.hidden()) throw new Error(deps.messages.hidden);
+  const stats = (await deps.listing(true))?.sessions.find((s) => s.id === session);
+  if (!stats) throw new Error(deps.messages.gone);
+  // Hidden while it was looked up: its title and folder never leave after that.
+  if (deps.hidden()) throw new Error(deps.messages.hidden);
+  return { session, title: termTitle(stats), cwd: stats.cwd };
+}
+
+/**
+ * Previews of a few running sessions: the last rows of each visible screen (`previewLines`).
+ * Unknown or ended sessions, and screens that could not be read, are left out; while screen
+ * content is hidden (before or after the reads) nothing is answered.
+ */
+export async function managerPreviews(
+  deps: TermManagerDeps,
+  raw: unknown,
+): Promise<Record<string, string[]>> {
+  const wanted = parsePreviewRequest(raw);
+  if (!wanted.length || deps.hidden()) return {};
+  const live = new Set(
+    (await deps.listing(false))?.sessions.filter((s) => !s.exit).map((s) => s.id) ?? [],
+  );
+  const out: Record<string, string[]> = {};
+  await Promise.all(
+    wanted
+      .filter((id) => live.has(id))
+      .map(async (id) => {
+        const screen = await deps.screen(id).catch(() => null);
+        if (screen) out[id] = previewLines(screen);
+      }),
+  );
+  return deps.hidden() ? {} : out;
 }

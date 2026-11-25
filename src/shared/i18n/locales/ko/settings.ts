@@ -251,7 +251,14 @@ export const settings: Messages['settings'] = {
     hide: '숨기기',
     kill: '종료',
     refresh: '새로고침',
+    manager: '터미널 관리 창',
+    managerTitle: '모든 세션을 한 창에서 하나씩 보기',
   },
+  builtinOpenIn: '터미널로 이동 시',
+  builtinOpenInHint:
+    '관리 창은 창 하나에서 보고 있는 세션만 그려 가벼워요. 개별 창은 세션마다 창을 하나씩 띄워요.',
+  builtinOpenInManager: '관리 창에서',
+  builtinOpenInWindow: '개별 창으로',
   termFontSize: '터미널 글자 크기',
   termFontSizeHint:
     '미니 터미널·내장 터미널 창의 글자 크기예요. 터미널에서 ⌘= / ⌘- 로도 바꿀 수 있고, ⌘0 을 누르면 기본 크기(12px)로 돌아와요. 이 컴퓨터에만 저장돼요.',

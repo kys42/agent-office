@@ -50,6 +50,28 @@ export const shell = {
     hideTitle: (key: string) =>
       `Hide this window${key ? ` (${key})` : ''}. The agent keeps running in the background; Settings › Built-in terminal opens it again.`,
   },
+  /** The terminal manager: every built-in session in one window, one shown at a time. */
+  manager: {
+    title: 'Terminals',
+    list: 'Built-in terminal sessions',
+    empty: 'No session runs in the built-in terminal.',
+    off: 'The built-in terminal is off. It starts with the first session.',
+    error: (reason: string) => `Could not read the built-in terminal: ${reason}`,
+    pick: 'Choose a session on the left.',
+    hidden: 'Hidden while screen content is hidden.',
+    windowOpen: 'Window open',
+    background: 'Background',
+    ended: 'Ended',
+    busy: 'Printing',
+    idle: 'Quiet',
+    openWindow: 'Own window',
+    openWindowTitle: 'Open this session in its own window too',
+    hide: 'Hide window',
+    hideTitle: 'Close its own window (the session keeps running)',
+    kill: 'End',
+    keys: '⌘1–9 select · ⌘⇧[ ] move · ⌘W close',
+    close: 'Close (the sessions keep running)',
+  },
   /** Both terminal windows: find bar, right-click menu and text size (⌘F, ⌘=, ⌘-, ⌘0). */
   view: {
     find: 'Find',

@@ -261,7 +261,14 @@ export const settings = {
     hide: 'Hide',
     kill: 'End',
     refresh: 'Refresh',
+    manager: 'Terminal manager',
+    managerTitle: 'See every session in one window, one at a time',
   },
+  builtinOpenIn: 'Go to terminal opens',
+  builtinOpenInHint:
+    'The terminal manager keeps one window and draws only the session you look at; its own window opens a window per session.',
+  builtinOpenInManager: 'In the terminal manager',
+  builtinOpenInWindow: 'In its own window',
   termFontSize: 'Terminal text size',
   termFontSizeHint:
     'Text size of the mini and built-in terminal windows. ⌘= / ⌘- in a terminal change it too, and ⌘0 brings back the default (12px). Kept on this computer.',

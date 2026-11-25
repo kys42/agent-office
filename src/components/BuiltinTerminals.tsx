@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppWindow, EyeOff, Power, RotateCw, SquareTerminal } from 'lucide-react';
+import { AppWindow, EyeOff, PanelsLeftBottom, Power, RotateCw, SquareTerminal } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { ago, shortPath } from '../lib/format';
@@ -99,6 +99,17 @@ export function BuiltinTerminals({
                   : s.hint}
           </p>
         </div>
+        {service.manager && daemon && (
+          <button
+            type="button"
+            className="builtin-terms-btn"
+            title={s.managerTitle}
+            onClick={() => void service.manager!().catch((e: Error) => setNote(e.message))}
+          >
+            <PanelsLeftBottom size={12} />
+            {s.manager}
+          </button>
+        )}
         <button
           type="button"
           className="builtin-terms-btn icon"

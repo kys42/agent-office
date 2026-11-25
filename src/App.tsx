@@ -43,6 +43,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PackageOpen,
+  PanelsLeftBottom,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
 import { isWindows, modifierKey, platformKeys } from './lib/platform';
@@ -600,6 +601,20 @@ export default function App() {
             icon: <AppWindow size={15} />,
             keywords: t.palette.actions.settingsKeywords,
             run: () => void api.settings?.open(),
+          },
+        ]
+      : []),
+    // Desktop (macOS/Linux): the built-in terminal's sessions in one window.
+    ...(api.builtinTerminals?.manager && !demo && prefs?.builtinTerminal === true && !prefs?.privacy
+      ? [
+          {
+            id: 'term-manager',
+            label: t.palette.actions.termManager,
+            hint: t.palette.actions.termManagerHint,
+            icon: <PanelsLeftBottom size={15} />,
+            keywords: t.palette.actions.termManagerKeywords,
+            run: () =>
+              void api.builtinTerminals?.manager?.().catch((e: Error) => notify(e.message)),
           },
         ]
       : []),

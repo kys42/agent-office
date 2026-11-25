@@ -32,6 +32,8 @@ export interface BuiltinSessionRow {
   windowOpen: boolean;
   /** Views attached in the daemon now (a shown window attaches; a hidden one does not). */
   attached: number;
+  /** Bytes its program printed so far (the manager's busy hint compares two lists). */
+  output?: number;
 }
 
 export interface BuiltinDaemonSummary {
@@ -79,4 +81,138 @@ export function formatBytes(bytes: number | undefined): string {
   const mb = bytes / (1024 * 1024);
   if (mb < 1024) return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
   return `${(mb / 1024).toFixed(1)} GB`;
+}
+
+// ─── The terminal manager (터미널 관리 창) ─────────────────────────────────────────────────────
+// One window over the daemon's sessions, cmux/Orca-like: a list on the left, the selected
+// session on the right. Only the selected one is attached (a live xterm); the others show at
+// most a few rows of their visible screen, read now and then while the window is seen.
+
+/** Where "go to its terminal" opens a built-in session. Missing: the manager. */
+export const BUILTIN_OPEN_IN = ['manager', 'window'] as const;
+export type BuiltinOpenIn = (typeof BUILTIN_OPEN_IN)[number];
+
+/** Ended sessions the manager still lists (most recently ended first): the latest only. */
+export const TERM_MANAGER_ENDED_MAX = 3;
+/** Rows of a session's visible screen its preview shows. */
+export const TERM_MANAGER_PREVIEW_ROWS = 3;
+/** Sessions previewed per read (the newest running ones besides the selected one). */
+export const TERM_MANAGER_PREVIEW_MAX = 8;
+/** A preview row is cut to this many characters. */
+export const TERM_MANAGER_PREVIEW_COLS = 160;
+/** How often previews are read again, only while the manager is seen. */
+export const TERM_MANAGER_PREVIEW_MS = 5000;
+
+/** The manager's rows: every running session (newest first), then the latest few ended ones. */
+export function managerRows(listing: BuiltinListing | null): BuiltinSessionRow[] {
+  if (!listing) return [];
+  const running = listing.sessions.filter((s) => !s.exit);
+  const ended = listing.sessions.filter((s) => s.exit).slice(0, TERM_MANAGER_ENDED_MAX);
+  return [...running, ...ended];
+}
+
+/**
+ * The sessions worth a preview now: running ones other than the selected one, the newest
+ * first, at most `TERM_MANAGER_PREVIEW_MAX`. None while screen content is hidden.
+ */
+export function previewTargets(
+  rows: BuiltinSessionRow[],
+  selected: string | null,
+  hidden: boolean,
+): string[] {
+  if (hidden) return [];
+  return rows
+    .filter((r) => !r.exit && r.id !== selected)
+    .slice(0, TERM_MANAGER_PREVIEW_MAX)
+    .map((r) => r.id);
+}
+
+/**
+ * A preview of a visible screen: its last non-blank rows above and at the cursor (what the
+ * program drew last), trimmed, each cut to `TERM_MANAGER_PREVIEW_COLS`, control characters
+ * dropped.
+ */
+export function previewLines(
+  screen: { lines: string[]; cursor?: { y: number } },
+  rows = TERM_MANAGER_PREVIEW_ROWS,
+): string[] {
+  const end = Math.min(
+    screen.lines.length,
+    screen.cursor && screen.cursor.y >= 0 ? screen.cursor.y + 1 : screen.lines.length,
+  );
+  const out: string[] = [];
+  for (let i = end - 1; i >= 0 && out.length < rows; i--) {
+    // eslint-disable-next-line no-control-regex
+    const line = (screen.lines[i] ?? '').replace(/[\x00-\x1f\x7f]/g, '').trim();
+    if (line) out.unshift(line.slice(0, TERM_MANAGER_PREVIEW_COLS));
+  }
+  return out;
+}
+
+/** Checks a preview request from the manager: a short list of valid, distinct session ids. */
+export function parsePreviewRequest(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length > TERM_MANAGER_PREVIEW_MAX) throw new Error('bad preview');
+  const ids = raw.map((id) => {
+    if (typeof id !== 'string' || !TERM_SESSION.test(id)) throw new Error('bad session');
+    return id;
+  });
+  return [...new Set(ids)];
+}
+
+/** Checks a session id the manager names (to select or act on). */
+export function parseManagerSession(raw: unknown): string {
+  if (typeof raw !== 'string' || !TERM_SESSION.test(raw)) throw new Error('bad session');
+  return raw;
+}
+
+/**
+ * Whether a running session printed something since the list before: its program's output
+ * count moved (a cheap "busy" hint; a redraw after a resize counts too). Unknown: false.
+ */
+export function outputMoved(
+  before: BuiltinSessionRow | undefined,
+  now: BuiltinSessionRow,
+): boolean {
+  if (now.exit || before?.output === undefined || now.output === undefined) return false;
+  return now.output > before.output;
+}
+
+/** A manager shortcut: select the nth row (0-based), step through the rows, or close. */
+export type ManagerKey = { select: number } | { step: 1 | -1 } | { close: true };
+
+/**
+ * The manager's own keys, read before the terminal sees them: ⌘1…⌘9 select, ⌘⇧[ / ⌘⇧] and
+ * ⌃Tab / ⌃⇧Tab step, ⌘W closes the window (the sessions keep running). Anything else is the
+ * terminal's (⌘0 stays the font reset).
+ */
+export function managerKey(e: {
+  type?: string;
+  key: string;
+  code?: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  isComposing?: boolean;
+}): ManagerKey | null {
+  if ((e.type !== undefined && e.type !== 'keydown') || e.isComposing || e.altKey) return null;
+  if (e.ctrlKey && !e.metaKey && e.key === 'Tab') return { step: e.shiftKey ? -1 : 1 };
+  if (!e.metaKey || e.ctrlKey) return null;
+  if (e.shiftKey) {
+    if (e.code === 'BracketLeft' || e.key === '{' || e.key === '[') return { step: -1 };
+    if (e.code === 'BracketRight' || e.key === '}' || e.key === ']') return { step: 1 };
+    return null;
+  }
+  const digit = /^Digit([1-9])$/.exec(e.code ?? '')?.[1] ?? (/^[1-9]$/.test(e.key) ? e.key : '');
+  if (digit) return { select: Number(digit) - 1 };
+  if (e.code === 'KeyW' || e.key.toLowerCase() === 'w') return { close: true };
+  return null;
+}
+
+/** The row `step` away from the selected one, wrapping around; the first when none is. */
+export function stepSelection(rows: { id: string }[], selected: string | null, step: 1 | -1) {
+  if (!rows.length) return null;
+  const at = rows.findIndex((r) => r.id === selected);
+  if (at < 0) return rows[0].id;
+  return rows[(at + step + rows.length) % rows.length].id;
 }
