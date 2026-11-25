@@ -32,7 +32,9 @@ import {
   builtinListing,
   managerPreviews,
   managerSelect,
+  rowActions,
   termTitle,
+  type SessionWindows,
   type TermManagerDeps,
   officeAgentsIn,
   psRss,
@@ -1164,12 +1166,18 @@ function setupBuiltinViews(builtin: TermBuiltin) {
    * Only the office's own windows ask; nothing here starts a daemon.
    */
   const rss = psRss(runCommand);
+  /** Each session's own window: what a list row opens, hides and shows as open. */
+  const ownWindows: SessionWindows = {
+    open: showWindow,
+    close: (id) => termWindows.close(id),
+    has: (id) => termWindows.has(id),
+  };
   const listing = () =>
     builtinListing({
       supported: builtinSupported(),
       listing: (fresh) => builtin.listing(fresh),
       hidden: () => !!delivery.latest?.preferences?.privacy,
-      windowOpen: (id) => termWindows.has(id),
+      windowOpen: (id) => ownWindows.has(id),
       agents: (sessions) => agentsIn(sessions, false),
       memory: rss,
     });
@@ -1188,11 +1196,9 @@ function setupBuiltinViews(builtin: TermBuiltin) {
         throw new Error(m().desktop.badRequest);
       }
       return builtinAction(
-        {
-          show: (id) => builtin.show!(id),
-          hide: (id) => termWindows.close(id),
-          kill: (id) => confirmKill(id, e.sender),
-        },
+        // A row opens the session's own window (whatever "go to terminal" opens), so its
+        // state and 숨기기 refer to that very window.
+        rowActions(ownWindows, (id) => confirmKill(id, e.sender)),
         request.session,
         request.action,
       );
@@ -1235,11 +1241,7 @@ function setupBuiltinViews(builtin: TermBuiltin) {
             throw new Error(m().desktop.badRequest);
           }
           return builtinAction(
-            {
-              show: (id) => showWindow(id),
-              hide: (id) => termWindows.close(id),
-              kill: (id) => confirmKill(id, e.sender),
-            },
+            rowActions(ownWindows, (id) => confirmKill(id, e.sender)),
             request.session,
             request.action,
           );

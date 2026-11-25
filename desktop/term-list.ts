@@ -182,6 +182,25 @@ export interface TermActionDeps {
   kill(session: string): Promise<boolean>;
 }
 
+/**
+ * A session's own terminal windows (`TermWindows`): what a row's 열기 opens, its 숨기기 closes
+ * and its "window open" state reads. All three must mean the same windows, so a row opened from
+ * the list shows as open and can be hidden again (the terminal manager is not one of them).
+ */
+export interface SessionWindows {
+  open(session: string): Promise<unknown>;
+  close(session: string): boolean;
+  has(session: string): boolean;
+}
+
+/** The actions of a list row (Settings, the terminal manager) on a session's own window. */
+export function rowActions(
+  windows: SessionWindows,
+  kill: (session: string) => Promise<boolean>,
+): TermActionDeps {
+  return { show: (id) => windows.open(id), hide: (id) => windows.close(id), kill };
+}
+
 /** Runs one Settings action; answers whether something changed. */
 export async function builtinAction(
   deps: TermActionDeps,

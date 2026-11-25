@@ -12,6 +12,7 @@ import {
   officeAgentsIn,
   parseRss,
   psRss,
+  rowActions,
   type TermListDeps,
   type TermManagerDeps,
 } from '../desktop/term-list.js';
@@ -567,4 +568,31 @@ test('manager sessions and the open-in choice are checked', () => {
     assert.throws(() => parseManagerSession(bad));
   assert.deepEqual([...BUILTIN_OPEN_IN], ['manager', 'window']);
   assert.deepEqual(parsePreviewRequest(['a', 'a', 'b']), ['a', 'b']);
+});
+
+test('a row opens, hides and reports the same window: its own, not the manager', async () => {
+  const open = new Set<string>();
+  const calls: string[] = [];
+  const windows = {
+    open: async (id: string) => {
+      calls.push(`open:${id}`);
+      open.add(id);
+    },
+    close: (id: string) => open.delete(id),
+    has: (id: string) => open.has(id),
+  };
+  const actions = rowActions(windows, async (id) => {
+    calls.push(`kill:${id}`);
+    return true;
+  });
+  const listing = () =>
+    builtinListing(deps({ windowOpen: windows.has, listing: async () => list([stats({})]) }));
+  assert.equal((await listing()).sessions[0].windowOpen, false);
+  assert.equal(await builtinAction(actions, 'ao-1', 'open'), true);
+  assert.equal((await listing()).sessions[0].windowOpen, true, 'opened shows as open');
+  assert.equal(await builtinAction(actions, 'ao-1', 'hide'), true, 'and can be hidden again');
+  assert.equal((await listing()).sessions[0].windowOpen, false);
+  assert.equal(await builtinAction(actions, 'ao-1', 'hide'), false);
+  assert.equal(await builtinAction(actions, 'ao-1', 'kill'), true);
+  assert.deepEqual(calls, ['open:ao-1', 'kill:ao-1']);
 });

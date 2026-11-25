@@ -139,7 +139,7 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
     - 그 세션에서 도는 사무실 대화: 그 폴더의 대화를 각 공급자의 위치 찾기(`terminalLocators`: Claude `locateTerminal`, Codex `findCodexTerminal`)로 찾아 `builtin` 세션 id가 맞는 것만. 종료 확인창도 같은 함수를 씁니다. 목록은 캐시된 조회(`fresh: false`)를 씁니다.
     - 세션 프로세스의 RSS: 살아 있는 pid만 `ps -o pid=,rss= -p …` 한 번. 데몬 RSS는 `list`의 `total.rss`.
     - 화면 내용 숨기기 중에는 폴더·프로그램·대화 이름을 빼고 보냅니다(위치 찾기도 하지 않음).
-  - 행 동작(`act`)은 열기(`show`), 숨기기(그 세션의 창 닫기), 종료(창의 종료와 같은 main 확인창 → kill)입니다. 페이지는 세션 id와 동작 이름만 보내고 main이 둘 다 검사합니다(`parseBuiltinAction`).
+  - 행 동작(`act`)은 열기(그 세션의 **개별 창**, '터미널로 이동 시' 설정과 무관), 숨기기(그 창 닫기), 종료(창의 종료와 같은 main 확인창 → kill)입니다. 페이지는 세션 id와 동작 이름만 보내고 main이 둘 다 검사합니다(`parseBuiltinAction`).
   - 설정 화면은 목록이 화면에 보이는 동안만 3초마다 새로 읽습니다(`IntersectionObserver` + 창 visibility). 데몬은 띄우지 않습니다(소켓이 없으면 '꺼져 있음').
   - 설정이 꺼져 있어도 데몬이 돌고 있으면 목록을 보여 줍니다. 꺼져 있고 데몬도 없으면 숨깁니다.
 - **터미널 관리 창** (#423, `desktop/term-manager.ts`, `src/components/TermManager.tsx`, 목록·선택·미리보기 규칙은 `desktop/term-list.ts`·`src/shared/term-list.ts`):
@@ -148,7 +148,7 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
   - 나머지 살아 있는 세션은 `screen` 요청으로 보이는 화면의 커서 위 마지막 3줄(`previewLines`, 한 줄 160자)만 미리보기로 씁니다. 한 번에 최대 8개, 5초마다, **창이 보이는 동안만** 읽고 가려지면 목록·미리보기 모두 멈춥니다. 로그를 모아 두지 않고 스크롤백도 개별 창과 같은 200줄입니다.
   - '출력 중' 표시는 데몬의 `bytesIn`(`output`)이 직전 목록보다 늘었는지(`outputMoved`)만 봅니다. 따로 묻는 요청은 없습니다.
   - 키: ⌘1…⌘9 선택, ⌘⇧[ / ⌘⇧] · ⌃Tab / ⌃⇧Tab 이전·다음, ⌘W 창 닫기(세션은 계속 실행). 창 capture 단계에서 먼저 읽어 터미널로 가지 않게 하고(`managerKey`), ⌘0 등 나머지는 그대로 TermChrome 키입니다.
-  - 줄 동작: 개별 창으로 열기·그 창 숨기기·종료. 설정과 같은 `builtinAction`과 같은 main 확인창을 씁니다.
+  - 줄 동작: 개별 창으로 열기·그 창 숨기기·종료. 설정과 같은 `rowActions`(열기·숨기기·'창 열림' 상태가 모두 같은 개별 창을 가리킴)와 같은 main 확인창을 씁니다.
   - IPC `office:term-manager`(`list`·`selected`·`select`·`preview`·`act`)는 관리 창만 믿습니다(`trustedManager`). 창이 세션 id를 고르면 main이 데몬 목록에 있는지 확인한 뒤(`managerSelect`) 그것을 선택으로 기억하고, `office:term`의 attach·kill은 창이 보낸 세션이 **지금 선택과 같을 때만** 받습니다(바꾸는 사이 늦게 온 attach가 다른 세션에 붙지 않음). 미리보기 요청도 id 형식·개수를 검사하고 살아 있는 세션만 읽습니다.
   - 화면 내용 숨기기 중에는 이름·폴더·프로그램·미리보기를 보내지 않고 선택도 거절하며, 켜지면 개별 창처럼 관리 창도 닫습니다.
   - 여는 곳: 명령 팔레트 '터미널 관리 창', 설정 › 실행 중인 내장 터미널 머리의 '터미널 관리 창', 그리고 '터미널로 이동'·실행 직후 창 열기. 설정 '터미널로 이동 시'(`preferences.builtinTerminalOpenIn`: `manager`(기본) / `window`)로 개별 창 동작으로 되돌릴 수 있습니다. 기본을 관리 창으로 둔 이유: 세션이 늘어도 창과 xterm이 하나라 쌓이지 않고, 보고 있는 세션만 흐릅니다.
