@@ -72,8 +72,22 @@ test('the commands a terminal window may send, and nothing else', () => {
     viewId: VIEW,
     paused: true,
   });
-  assert.deepEqual(parseTermCommand({ type: 'kill', session: 'other' }), { type: 'kill' });
+  assert.deepEqual(parseTermCommand({ type: 'kill' }), { type: 'kill' });
+  // The terminal manager names the session it selected; main attaches or ends only that one.
+  assert.deepEqual(parseTermCommand({ type: 'kill', session: 'ao-2' }), {
+    type: 'kill',
+    session: 'ao-2',
+  });
+  assert.deepEqual(parseTermCommand({ type: 'attach', cols: 80, rows: 24, session: 'ao-2' }), {
+    type: 'attach',
+    cols: 80,
+    rows: 24,
+    session: 'ao-2',
+  });
   for (const bad of [
+    { type: 'attach', cols: 80, rows: 24, session: '../x' },
+    { type: 'attach', cols: 80, rows: 24, session: 7 },
+    { type: 'kill', session: '' },
     null,
     [],
     { type: 'attach', session: 'x' }, // a size is required; a session is never read from it
