@@ -28,15 +28,20 @@ type Status = 'connecting' | 'live' | 'away' | 'ended' | 'error';
  *
  * `embedded`: drawn inside the terminal manager (TermManager), which owns the window's own
  * buttons (on top, close). Its commands name the session, so main never attaches or ends one
- * the manager has already switched away from.
+ * the manager has already switched away from. `onTitle`: the title its program sets (OSC 0/2)
+ * as it changes, for the manager's row name.
  */
 export default function TermPanel({
   target,
   embedded = false,
+  onTitle,
 }: {
   target: TermTarget;
   embedded?: boolean;
+  onTitle?: (title: string) => void;
 }) {
+  const titleRef = useRef(onTitle);
+  titleRef.current = onTitle;
   const { t } = useI18n();
   const term = api.term!;
   const host = useRef<HTMLDivElement>(null);
@@ -177,6 +182,7 @@ export default function TermPanel({
       if (id === viewId) lose();
       else if (!viewId) hold(id, { kind: 'lost' });
     });
+    const titled = xterm.onTitleChange((title) => titleRef.current?.(title));
     const input = xterm.onData((data) => {
       if (!viewId) return;
       for (const piece of splitInput(data)) term.input(viewId, piece);
@@ -273,6 +279,7 @@ export default function TermPanel({
       offExit();
       offLost();
       input.dispose();
+      titled.dispose();
       detach();
       unbind();
       xterm.dispose();

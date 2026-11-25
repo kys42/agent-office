@@ -8,15 +8,19 @@ import { OnTopButton, usePopupOnTop } from './WindowPin';
 import {
   BUILTIN_LIST_REFRESH_MS,
   formatBytes,
+  groupedOrder,
+  groupRows,
   managerKey,
   managerRows,
   outputMoved,
   previewTargets,
   stepSelection,
   TERM_MANAGER_PREVIEW_MS,
+  termRowTitle,
   type BuiltinListing,
   type BuiltinSessionAction,
   type BuiltinSessionRow,
+  type TermPreview,
 } from '../shared/term-list';
 import type { TermTarget } from '../shared/term-view';
 
@@ -43,7 +47,8 @@ export function TermManagerWindow() {
   const term = api.term;
   const [listing, setListing] = useState<BuiltinListing | null>(null);
   const [target, setTarget] = useState<TermTarget | null>(null);
-  const [previews, setPreviews] = useState<Record<string, string[]>>({});
+  // The latest read of each session (kept while it is selected: its title stays the same).
+  const [previews, setPreviews] = useState<Record<string, TermPreview>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [acting, setActing] = useState('');
   const [note, setNote] = useState('');
@@ -52,7 +57,9 @@ export function TermManagerWindow() {
   const wanted = useRef<string | null>(null);
   const previous = useRef(new Map<string, BuiltinSessionRow>());
   const hidden = !!listing?.hidden;
-  const rows = useMemo(() => managerRows(listing), [listing]);
+  // Under project headings; ⌘1…9 and stepping follow the order drawn.
+  const groups = useMemo(() => groupRows(managerRows(listing)), [listing]);
+  const rows = useMemo(() => groupedOrder(groups), [groups]);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const selected = target?.session ?? null;
@@ -134,16 +141,22 @@ export function TermManagerWindow() {
   useEffect(() => {
     if (!service) return;
     const ids = previewKey ? previewKey.split(',') : [];
-    if (!ids.length) {
+    if (hidden) {
       setPreviews({});
       return;
     }
+    if (!ids.length) return;
     let alive = true;
     const read = async () => {
       if (!visible()) return;
       try {
         const next = await service.preview(ids);
-        if (alive) setPreviews(next);
+        if (!alive) return;
+        const known = new Set(rowsRef.current.map((r) => r.id));
+        setPreviews((before) => {
+          const kept = Object.entries(before).filter(([id]) => known.has(id) && !(id in next));
+          return { ...Object.fromEntries(kept), ...next };
+        });
       } catch {
         /* the next read tries again */
       }
@@ -157,7 +170,32 @@ export function TermManagerWindow() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', shown);
     };
-  }, [service, previewKey]);
+  }, [service, previewKey, hidden]);
+
+  // The selected session is not previewed: read its name once when chosen (its title and last
+  // prompt, for a row with no conversation), then follow its live view's title changes.
+  useEffect(() => {
+    if (!service || !selected || hidden) return;
+    if (!rowsRef.current.some((r) => r.id === selected && !r.exit)) return;
+    let alive = true;
+    void service
+      .preview([selected])
+      .then((next) => {
+        if (alive && next[selected]) setPreviews((before) => ({ ...before, ...next }));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [service, selected, hidden]);
+  const titleChanged = useCallback(
+    (session: string, title: string) =>
+      setPreviews((before) => ({
+        ...before,
+        [session]: { lines: before[session]?.lines ?? [], title: title.trim() },
+      })),
+    [],
+  );
 
   // The window's own keys, before the terminal sees them.
   useEffect(() => {
@@ -260,91 +298,120 @@ export function TermManagerWindow() {
           {hidden && <p className="term-manager-hint">{s.hidden}</p>}
           {empty && <p className="term-manager-hint">{empty}</p>}
           <ul>
-            {rows.map((row, i) => {
-              const names = hidden ? '' : row.agents.map((a) => a.name).join(', ');
-              const program = hidden ? '' : row.program;
-              const cwd = hidden ? '' : row.cwd;
-              const ended = !!row.exit;
-              const state = ended ? 'ended' : row.windowOpen ? 'open' : 'background';
-              const lines = hidden || row.id === selected ? [] : (previews[row.id] ?? []);
-              const isBusy = !ended && !!busy[row.id];
-              return (
-                <li
-                  key={row.id}
-                  data-term-session={row.id}
-                  data-state={state}
-                  aria-current={row.id === selected ? 'true' : undefined}
-                >
-                  <button
-                    type="button"
-                    className="term-manager-row"
-                    onClick={() => void choose(row.id)}
-                    title={cwd || undefined}
+            {groups.map((group) => (
+              <li
+                key={group.key || '-'}
+                className="term-manager-group"
+                data-term-project={group.key}
+              >
+                {group.name && (
+                  <div
+                    className="term-manager-group-head"
+                    title={group.key}
+                    aria-label={s.group(group.name, group.rows.length)}
                   >
-                    <span className="term-manager-name">
-                      <span
-                        className="term-manager-dot"
-                        data-busy={isBusy ? 'true' : 'false'}
-                        aria-label={ended ? s.ended : isBusy ? s.busy : s.idle}
-                      />
-                      <b>{names || program || row.id}</b>
-                      {names && program && <span className="term-manager-program">{program}</span>}
-                      {isMac && i < 9 && <kbd className="term-manager-key">⌘{i + 1}</kbd>}
-                    </span>
-                    <span className="term-manager-meta">
-                      {cwd && <span className="term-manager-path">{shortPath(cwd)}</span>}
-                      <span className="term-manager-state">
-                        {ended ? s.ended : row.windowOpen ? s.windowOpen : s.background}
-                      </span>
-                      {row.rss !== undefined && <span>{formatBytes(row.rss)}</span>}
-                    </span>
-                    {lines.length > 0 && (
-                      <span className="term-manager-preview" aria-hidden>
-                        {lines.join('\n')}
-                      </span>
-                    )}
-                  </button>
-                  <span className="term-manager-actions">
-                    <button
-                      type="button"
-                      className="mini-shell-btn icon"
-                      aria-label={s.openWindow}
-                      title={s.openWindowTitle}
-                      disabled={ended || hidden || !!acting}
-                      onClick={() => void act(row, 'open')}
-                    >
-                      <AppWindow size={12} />
-                    </button>
-                    <button
-                      type="button"
-                      className="mini-shell-btn icon"
-                      aria-label={s.hide}
-                      title={s.hideTitle}
-                      disabled={!row.windowOpen || !!acting}
-                      onClick={() => void act(row, 'hide')}
-                    >
-                      <EyeOff size={12} />
-                    </button>
-                    <button
-                      type="button"
-                      className="mini-shell-btn icon danger"
-                      aria-label={s.kill}
-                      title={t.shell.term.killTitle}
-                      disabled={ended || !!acting}
-                      onClick={() => void act(row, 'kill')}
-                    >
-                      <Power size={12} />
-                    </button>
-                  </span>
-                </li>
-              );
-            })}
+                    <span>{group.name}</span>
+                    <span className="term-manager-group-count">{group.rows.length}</span>
+                  </div>
+                )}
+                <ul>
+                  {group.rows.map((row) => {
+                    const i = rows.indexOf(row);
+                    const title = termRowTitle(row, previews[row.id], hidden, shortPath);
+                    const program = hidden ? '' : row.program;
+                    const cwd = hidden ? '' : row.cwd;
+                    const ended = !!row.exit;
+                    const state = ended ? 'ended' : row.windowOpen ? 'open' : 'background';
+                    const lines =
+                      hidden || row.id === selected ? [] : (previews[row.id]?.lines ?? []);
+                    const isBusy = !ended && !!busy[row.id];
+                    return (
+                      <li
+                        key={row.id}
+                        data-term-session={row.id}
+                        data-state={state}
+                        aria-current={row.id === selected ? 'true' : undefined}
+                      >
+                        <button
+                          type="button"
+                          className="term-manager-row"
+                          onClick={() => void choose(row.id)}
+                          title={cwd || undefined}
+                        >
+                          <span className="term-manager-name">
+                            <span
+                              className="term-manager-dot"
+                              data-busy={isBusy ? 'true' : 'false'}
+                              aria-label={ended ? s.ended : isBusy ? s.busy : s.idle}
+                            />
+                            <b data-title-source={title.source}>{title.text}</b>
+                            {isMac && i < 9 && <kbd className="term-manager-key">⌘{i + 1}</kbd>}
+                          </span>
+                          <span className="term-manager-meta">
+                            {program && <span className="term-manager-program">{program}</span>}
+                            {cwd && title.source !== 'path' && (
+                              <span className="term-manager-path">{shortPath(cwd)}</span>
+                            )}
+                            <span className="term-manager-state">
+                              {ended ? s.ended : row.windowOpen ? s.windowOpen : s.background}
+                            </span>
+                            {row.rss !== undefined && <span>{formatBytes(row.rss)}</span>}
+                          </span>
+                          {lines.length > 0 && (
+                            <span className="term-manager-preview" aria-hidden>
+                              {lines.join('\n')}
+                            </span>
+                          )}
+                        </button>
+                        <span className="term-manager-actions">
+                          <button
+                            type="button"
+                            className="mini-shell-btn icon"
+                            aria-label={s.openWindow}
+                            title={s.openWindowTitle}
+                            disabled={ended || hidden || !!acting}
+                            onClick={() => void act(row, 'open')}
+                          >
+                            <AppWindow size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="mini-shell-btn icon"
+                            aria-label={s.hide}
+                            title={s.hideTitle}
+                            disabled={!row.windowOpen || !!acting}
+                            onClick={() => void act(row, 'hide')}
+                          >
+                            <EyeOff size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="mini-shell-btn icon danger"
+                            aria-label={s.kill}
+                            title={t.shell.term.killTitle}
+                            disabled={ended || !!acting}
+                            onClick={() => void act(row, 'kill')}
+                          >
+                            <Power size={12} />
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            ))}
           </ul>
         </nav>
         <main className="term-manager-view">
           {target && !hidden ? (
             <Suspense fallback={null}>
-              <TermPanel key={target.session} target={target} embedded />
+              <TermPanel
+                key={target.session}
+                target={target}
+                embedded
+                onTitle={(title) => titleChanged(target.session, title)}
+              />
             </Suspense>
           ) : (
             <p className="term-manager-hint center">{hidden ? s.hidden : s.pick}</p>

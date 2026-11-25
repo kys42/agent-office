@@ -262,8 +262,27 @@ test('conversations are matched to sessions through each provider lookup only', 
     },
   );
   assert.deepEqual(calls, ['c1', 'x1', 'c6']);
-  assert.deepEqual(found.get('ao-1'), [{ id: 's1', name: '버터', provider: 'claude' }]);
-  assert.deepEqual(found.get('ao-2'), [{ id: 's2', name: 'T2', provider: 'codex' }]);
+  assert.deepEqual(found.get('ao-1'), [
+    {
+      id: 's1',
+      name: '버터',
+      provider: 'claude',
+      alias: '버터',
+      title: 'T1',
+      project: { key: '/work/app', name: 'app' },
+      updatedAt: 3,
+    },
+  ]);
+  assert.deepEqual(found.get('ao-2'), [
+    {
+      id: 's2',
+      name: 'T2',
+      provider: 'codex',
+      title: 'T2',
+      project: { key: '/work/b/', name: 'b' },
+      updatedAt: 2,
+    },
+  ]);
 });
 
 test('a session outside the list or a failing lookup is never matched', async () => {
@@ -496,7 +515,7 @@ test('previews read running sessions only, and nothing while hidden', async () =
     },
   });
   assert.deepEqual(await managerPreviews(deps, ['ao-1', 'ao-2', 'done', 'gone', 'ao-1']), {
-    'ao-1': ['$ ls', 'a  b'],
+    'ao-1': { lines: ['$ ls', 'a  b'] },
   });
   assert.deepEqual(read.sort(), ['ao-1', 'ao-2'], 'ended or unknown sessions are never read');
   read.length = 0;

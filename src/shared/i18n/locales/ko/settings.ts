@@ -252,6 +252,7 @@ export const settings: Messages['settings'] = {
     kill: '종료',
     refresh: '새로고침',
     manager: '터미널 관리 창',
+    group: (name, count) => `${name}: 세션 ${count}개`,
     managerTitle: '모든 세션을 한 창에서 하나씩 보기',
   },
   builtinOpenIn: '터미널로 이동 시',

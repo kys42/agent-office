@@ -262,6 +262,7 @@ export const settings = {
     kill: 'End',
     refresh: 'Refresh',
     manager: 'Terminal manager',
+    group: (name: string, count: number) => `${name}: ${count} session${count === 1 ? '' : 's'}`,
     managerTitle: 'See every session in one window, one at a time',
   },
   builtinOpenIn: 'Go to terminal opens',

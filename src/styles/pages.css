@@ -1748,6 +1748,19 @@ body.is-windows .settings-window-bar {
   display: grid;
   gap: 6px;
 }
+.builtin-terms-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 4px 30px;
+  font-size: calc(11px * var(--read-scale));
+  font-weight: 600;
+  color: var(--text-3);
+}
+.builtin-terms-group-head > span {
+  font-weight: 400;
+  opacity: 0.8;
+}
 .builtin-terms-list > li {
   display: flex;
   align-items: center;

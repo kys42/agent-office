@@ -331,18 +331,45 @@ body.shell-mode {
   padding: 4px;
   list-style: none;
 }
-.term-manager-list li {
+.term-manager-list li[data-term-session] {
   position: relative;
   border-radius: 7px;
 }
-.term-manager-list li + li {
+.term-manager-list li[data-term-session] + li {
   margin-top: 2px;
 }
 .term-manager-list li[aria-current='true'] {
   background: var(--bg-3);
 }
-.term-manager-list li:not([aria-current='true']):hover {
+.term-manager-list li[data-term-session]:not([aria-current='true']):hover {
   background: var(--bg-2);
+}
+.term-manager-list .term-manager-group > ul {
+  padding: 0;
+}
+.term-manager-group + .term-manager-group {
+  margin-top: 6px;
+}
+.term-manager-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.term-manager-group-head > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.term-manager-group-count {
+  flex-shrink: 0;
+  font-weight: 400;
+  opacity: 0.8;
 }
 .term-manager-row {
   display: flex;
@@ -438,8 +465,8 @@ li[data-state='ended'] .term-manager-row {
   background: var(--bg-1);
   border-radius: 6px;
 }
-.term-manager-list li:hover .term-manager-actions,
-.term-manager-list li:focus-within .term-manager-actions {
+.term-manager-list li[data-term-session]:hover .term-manager-actions,
+.term-manager-list li[data-term-session]:focus-within .term-manager-actions {
   display: flex;
 }
 .term-manager-hint {

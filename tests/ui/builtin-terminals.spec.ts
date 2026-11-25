@@ -29,7 +29,8 @@ async function setup(page: Page, options: Options = {}) {
           id: 'ao-1',
           program: 'claude',
           cwd: '/Users/me/work/app',
-          agents: [{ id: 's1', name: '버터', provider: 'claude' }],
+          agents: [{ id: 's1', name: '버터', alias: '버터', provider: 'claude' }],
+          project: { key: 'repo:app', name: 'app' },
           startedAt: now - 5 * 60_000,
           pid: 4242,
           rss: 214 * 1024 * 1024,
@@ -41,6 +42,7 @@ async function setup(page: Page, options: Options = {}) {
           program: 'codex',
           cwd: '/Users/me/work/b',
           agents: [],
+          project: { key: '/Users/me/work/b', name: 'b' },
           startedAt: now - 2 * 3600_000,
           pid: 4343,
           rss: 80 * 1024 * 1024,
@@ -52,9 +54,22 @@ async function setup(page: Page, options: Options = {}) {
           program: 'claude',
           cwd: '/Users/me/work/c',
           agents: [],
+          project: { key: '/Users/me/work/c', name: 'c' },
           startedAt: now - 3600_000,
           pid: 4444,
           exit: { code: 0, signal: null, at: now - 60_000 },
+          windowOpen: false,
+          attached: 0,
+        },
+        // A second Claude in the same project: its session title tells it apart.
+        {
+          id: 'ao-4',
+          program: 'claude',
+          cwd: '/Users/me/work/app',
+          agents: [{ id: 's4', name: '테스트 정리', title: '테스트 정리', provider: 'claude' }],
+          project: { key: 'repo:app', name: 'app' },
+          startedAt: now - 10 * 60_000,
+          pid: 4545,
           windowOpen: false,
           attached: 0,
         },
@@ -117,7 +132,15 @@ test('Settings lists the built-in terminals running in the background, with thei
 }) => {
   await setup(page);
   await expect(list(page).getByText('실행 중인 내장 터미널')).toBeVisible();
-  await expect(list(page)).toContainText('2개 실행 중 · 터미널 호스트 72 MB');
+  await expect(list(page)).toContainText('3개 실행 중 · 터미널 호스트 72 MB');
+  // Under project headings, the most recently active first; ended ones last.
+  await expect(list(page).locator('.builtin-terms-group-head')).toHaveText(['app2', 'b1', 'c1']);
+  expect(
+    await list(page)
+      .locator('[data-term-session]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('data-term-session'))),
+  ).toEqual(['ao-1', 'ao-4', 'ao-2', 'ao-3']);
+  await expect(row(page, 'ao-4').locator('b')).toContainText('테스트 정리');
   const butter = row(page, 'ao-1');
   await expect(butter).toContainText('버터');
   await expect(butter).toContainText('claude');
@@ -156,7 +179,7 @@ test('숨기기 closes the window only, 열기 brings it back and 종료 goes th
     'open:ao-1',
     'kill:ao-2',
   ]);
-  await expect(list(page)).toContainText('1개 실행 중');
+  await expect(list(page)).toContainText('2개 실행 중');
 });
 
 test('the list refreshes by itself while shown', async ({ page }) => {
@@ -216,4 +239,6 @@ test('hidden screen content masks names and folders even in an answer that still
   await expect(butter).not.toContainText('~/work/app');
   await expect(butter).not.toContainText('claude');
   await expect(butter).toContainText('ao-1');
+  await expect(list(page).locator('.builtin-terms-group-head')).toHaveCount(0);
+  await expect(list(page)).not.toContainText('테스트 정리');
 });

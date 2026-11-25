@@ -10,6 +10,23 @@ export interface BuiltinSessionAgent {
   /** Its colleague name (alias) or title. */
   name: string;
   provider: string;
+  /**
+   * What the office calls it (사무실 별명) or the agent's own name (a teammate's member name, a
+   * named agent); empty when it has none.
+   */
+  alias?: string;
+  /** The conversation's own title (a `/rename` title or the one the office shows). */
+  title?: string;
+  /** Its project as the office groups it (`projectKey` / `zoneLabel`). */
+  project?: TermProject;
+  /** Epoch ms of its latest activity. */
+  updatedAt?: number;
+}
+
+/** A project heading of the session list: the office's own zone key and name. */
+export interface TermProject {
+  key: string;
+  name: string;
 }
 
 export interface BuiltinSessionRow {
@@ -20,6 +37,11 @@ export interface BuiltinSessionRow {
   cwd: string;
   /** The conversations of the office found running here (none when not located). */
   agents: BuiltinSessionAgent[];
+  /**
+   * The project it belongs to: its conversation's, else the office project whose folder holds
+   * its folder, else its folder. Missing while screen content is hidden.
+   */
+  project?: TermProject;
   /** Epoch ms. */
   startedAt: number;
   /** The session's own process (the agent, run directly). */
@@ -216,3 +238,102 @@ export function stepSelection(rows: { id: string }[], selected: string | null, s
   if (at < 0) return rows[0].id;
   return rows[(at + step + rows.length) % rows.length].id;
 }
+
+// ─── Row titles and project groups ─────────────────────────────────────────────────────────────
+// Shared by Settings › 내장 터미널 and the terminal manager: which name a row shows first, and the
+// project headings the rows sit under.
+
+/** What a preview read gives besides its rows: the program's window title (OSC 0/2). */
+export interface TermPreview {
+  lines: string[];
+  /** The title the program set; '' or missing when it set none. */
+  title?: string;
+}
+
+/** Where a row's title came from (most telling first). */
+export type TermTitleSource =
+  'alias' | 'session' | 'terminal' | 'prompt' | 'path' | 'program' | 'id';
+
+/** A prompt's input as a shell draws it: `user@host dir % make test` → `make test`. */
+const PROMPT = /(?:^|\s)[$%#❯➜›»]\s+(\S.*)$/;
+
+/** The command typed at the last prompt among these rows, if one looks like a prompt. */
+export function promptCommand(lines: string[] | undefined): string {
+  if (!lines) return '';
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const hit = PROMPT.exec(lines[i] ?? '');
+    if (hit) return hit[1].trim();
+  }
+  return '';
+}
+
+/**
+ * A row's title, most telling first: (a) the office nickname or agent name of the conversations
+ * running there, (b) their session titles, and with none linked (c) the title the program set or
+ * the command at its last prompt, (d) its short folder, then its program and id. Hidden: the id.
+ */
+export function termRowTitle(
+  row: Pick<BuiltinSessionRow, 'id' | 'program' | 'cwd' | 'agents'>,
+  preview: TermPreview | undefined,
+  hidden: boolean,
+  short: (path: string) => string = (p) => p,
+): { text: string; source: TermTitleSource } {
+  if (hidden) return { text: row.id, source: 'id' };
+  const names = [...new Set(row.agents.map((a) => a.alias || a.title || a.name).filter(Boolean))];
+  if (names.length)
+    return {
+      text: names.join(', '),
+      source: row.agents.some((a) => a.alias) ? 'alias' : 'session',
+    };
+  const title = (preview?.title ?? '').trim();
+  // A title that only repeats the program or folder tells nothing new.
+  if (title && title !== row.program && title !== row.cwd && title !== short(row.cwd))
+    return { text: title.slice(0, TERM_MANAGER_PREVIEW_COLS), source: 'terminal' };
+  const typed = promptCommand(preview?.lines);
+  if (typed) return { text: typed.slice(0, TERM_MANAGER_PREVIEW_COLS), source: 'prompt' };
+  if (row.cwd) return { text: short(row.cwd), source: 'path' };
+  if (row.program) return { text: row.program, source: 'program' };
+  return { text: row.id, source: 'id' };
+}
+
+/** A project heading and its rows, in the order the list draws them. */
+export interface TermGroup {
+  /** '' for the one unnamed group (screen content hidden, or no folder known). */
+  key: string;
+  name: string;
+  rows: BuiltinSessionRow[];
+  /** Its latest activity (epoch ms). */
+  at: number;
+  /** Some session of it still runs. */
+  running: boolean;
+}
+
+/** A session's latest activity: its start, its conversations' latest turn, or its end. */
+export const rowActivity = (r: BuiltinSessionRow) =>
+  Math.max(r.startedAt, r.exit?.at ?? 0, ...r.agents.map((a) => a.updatedAt ?? 0));
+
+/**
+ * The rows under their project headings: projects with a running session first, the most
+ * recently active first; inside one, the rows keep their order. Rows without a project (screen
+ * content hidden) make one unnamed group.
+ */
+export function groupRows(rows: BuiltinSessionRow[]): TermGroup[] {
+  const groups = new Map<string, TermGroup>();
+  for (const row of rows) {
+    const key = row.project?.key ?? '';
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, name: row.project?.name ?? '', rows: [], at: 0, running: false };
+      groups.set(key, g);
+    }
+    g.rows.push(row);
+    g.at = Math.max(g.at, rowActivity(row));
+    g.running ||= !row.exit;
+  }
+  return [...groups.values()].sort(
+    (a, b) => Number(b.running) - Number(a.running) || b.at - a.at || a.name.localeCompare(b.name),
+  );
+}
+
+/** The rows in the order the grouped list shows them (what ⌘1…9 and stepping follow). */
+export const groupedOrder = (groups: TermGroup[]) => groups.flatMap((g) => g.rows);

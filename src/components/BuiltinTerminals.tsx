@@ -6,6 +6,8 @@ import { ago, shortPath } from '../lib/format';
 import {
   BUILTIN_LIST_REFRESH_MS,
   formatBytes,
+  groupRows,
+  termRowTitle,
   type BuiltinListing,
   type BuiltinSessionAction,
   type BuiltinSessionRow,
@@ -126,79 +128,105 @@ export function BuiltinTerminals({
           {listing!.sessions.length === 0 ? (
             <p className="builtin-terms-empty">{s.empty}</p>
           ) : (
-            <ul className="builtin-terms-list">
-              {listing!.sessions.map((row) => {
-                const names = hidden ? '' : row.agents.map((a) => a.name).join(', ');
-                const program = hidden ? '' : row.program;
-                const cwd = hidden ? '' : row.cwd;
-                const ended = !!row.exit;
-                return (
-                  <li
-                    key={row.id}
-                    data-term-session={row.id}
-                    data-state={ended ? 'ended' : row.windowOpen ? 'open' : 'background'}
+            groupRows(
+              hidden
+                ? listing!.sessions.map((r) => ({ ...r, project: undefined }))
+                : listing!.sessions,
+            ).map((group) => (
+              <div
+                key={group.key || '-'}
+                className="builtin-terms-group"
+                data-term-project={hidden ? '' : group.key}
+              >
+                {!hidden && group.name && (
+                  <p
+                    className="builtin-terms-group-head"
+                    title={group.key}
+                    aria-label={s.group(group.name, group.rows.length)}
                   >
-                    <div className="builtin-terms-main">
-                      <b title={names || undefined}>
-                        {names || program || row.id}
-                        {names && program && (
-                          <span className="builtin-terms-program">{program}</span>
-                        )}
-                      </b>
-                      {cwd && (
-                        <span className="builtin-terms-path" title={cwd}>
-                          {shortPath(cwd)}
-                        </span>
-                      )}
-                      <span className="builtin-terms-meta">
-                        <span className="builtin-terms-state">
-                          {ended
-                            ? s.ended(row.exit!.code)
-                            : row.windowOpen
-                              ? s.windowOpen
-                              : s.background}
-                        </span>
-                        <span>{s.started(ago(row.startedAt))}</span>
-                        {row.rss !== undefined && <span>{s.memory(formatBytes(row.rss))}</span>}
-                        {!ended && <span>{s.pid(row.pid)}</span>}
-                        {!names && !hidden && !ended && <span>{s.unknown}</span>}
-                      </span>
-                    </div>
-                    <div className="builtin-terms-actions">
-                      <button
-                        type="button"
-                        className="builtin-terms-btn"
-                        disabled={ended || !!busy}
-                        onClick={() => void act(row, 'open')}
+                    {group.name}
+                    <span>{group.rows.length}</span>
+                  </p>
+                )}
+                <ul className="builtin-terms-list">
+                  {group.rows.map((row) => {
+                    const title = termRowTitle(row, undefined, hidden, shortPath);
+                    const linked = !hidden && row.agents.length > 0;
+                    const program = hidden ? '' : row.program;
+                    const cwd = hidden ? '' : row.cwd;
+                    const ended = !!row.exit;
+                    return (
+                      <li
+                        key={row.id}
+                        data-term-session={row.id}
+                        data-state={ended ? 'ended' : row.windowOpen ? 'open' : 'background'}
                       >
-                        <AppWindow size={12} />
-                        {s.open}
-                      </button>
-                      <button
-                        type="button"
-                        className="builtin-terms-btn"
-                        disabled={!row.windowOpen || !!busy}
-                        title={t.shell.term.hideTitle('')}
-                        onClick={() => void act(row, 'hide')}
-                      >
-                        <EyeOff size={12} />
-                        {s.hide}
-                      </button>
-                      <button
-                        type="button"
-                        className="builtin-terms-btn danger"
-                        disabled={ended || !!busy}
-                        title={t.shell.term.killTitle}
-                        onClick={() => void act(row, 'kill')}
-                      >
-                        <Power size={12} />
-                        {s.kill}
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                        <div className="builtin-terms-main">
+                          <b
+                            title={linked ? title.text : undefined}
+                            data-title-source={title.source}
+                          >
+                            {title.text}
+                            {program && title.source !== 'program' && (
+                              <span className="builtin-terms-program">{program}</span>
+                            )}
+                          </b>
+                          {cwd && title.source !== 'path' && (
+                            <span className="builtin-terms-path" title={cwd}>
+                              {shortPath(cwd)}
+                            </span>
+                          )}
+                          <span className="builtin-terms-meta">
+                            <span className="builtin-terms-state">
+                              {ended
+                                ? s.ended(row.exit!.code)
+                                : row.windowOpen
+                                  ? s.windowOpen
+                                  : s.background}
+                            </span>
+                            <span>{s.started(ago(row.startedAt))}</span>
+                            {row.rss !== undefined && <span>{s.memory(formatBytes(row.rss))}</span>}
+                            {!ended && <span>{s.pid(row.pid)}</span>}
+                            {!linked && !hidden && !ended && <span>{s.unknown}</span>}
+                          </span>
+                        </div>
+                        <div className="builtin-terms-actions">
+                          <button
+                            type="button"
+                            className="builtin-terms-btn"
+                            disabled={ended || !!busy}
+                            onClick={() => void act(row, 'open')}
+                          >
+                            <AppWindow size={12} />
+                            {s.open}
+                          </button>
+                          <button
+                            type="button"
+                            className="builtin-terms-btn"
+                            disabled={!row.windowOpen || !!busy}
+                            title={t.shell.term.hideTitle('')}
+                            onClick={() => void act(row, 'hide')}
+                          >
+                            <EyeOff size={12} />
+                            {s.hide}
+                          </button>
+                          <button
+                            type="button"
+                            className="builtin-terms-btn danger"
+                            disabled={ended || !!busy}
+                            title={t.shell.term.killTitle}
+                            onClick={() => void act(row, 'kill')}
+                          >
+                            <Power size={12} />
+                            {s.kill}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))
           )}
         </>
       )}
