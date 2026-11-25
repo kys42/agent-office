@@ -182,7 +182,8 @@ body.shell-mode {
   color: #e5e5ea;
   border-color: #fff4;
 }
-.mini-shell .mini-shell-note {
+.mini-shell .mini-shell-note,
+.term-manager > .mini-shell-note {
   padding: 3px 10px;
   font-size: 11px;
   color: #aeaeb2;
@@ -306,4 +307,160 @@ body.shell-mode {
     local('Noto Sans CJK KR Bold'), local('NanumGothic Bold');
   unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7AF, U+D7B0-D7FF;
   size-adjust: 125%;
+}
+
+/* The terminal manager (TermManager.tsx, desktop/term-manager.ts): the sessions on the left, the
+   selected one's terminal on the right. Only that one is a live view; the rows show at most a
+   few lines of the others' screens. */
+.term-manager-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.term-manager-list {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 248px;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--bg-1);
+  border-right: 1px solid var(--line-2);
+}
+.term-manager-list ul {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+.term-manager-list li {
+  position: relative;
+  border-radius: 7px;
+}
+.term-manager-list li + li {
+  margin-top: 2px;
+}
+.term-manager-list li[aria-current='true'] {
+  background: var(--bg-3);
+}
+.term-manager-list li:not([aria-current='true']):hover {
+  background: var(--bg-2);
+}
+.term-manager-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.term-manager-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.term-manager-name b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.term-manager-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+  opacity: 0.5;
+}
+.term-manager-dot[data-busy='true'] {
+  background: #34c759;
+  opacity: 1;
+}
+li[data-state='ended'] .term-manager-row {
+  color: var(--text-3);
+}
+.term-manager-program {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.term-manager-key {
+  margin-left: auto;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.term-manager-meta {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 13px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.term-manager-meta > span {
+  flex-shrink: 0;
+}
+.term-manager-meta .term-manager-path {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.term-manager-preview {
+  display: block;
+  margin: 3px 0 0 13px;
+  padding: 3px 5px;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: pre;
+  text-overflow: ellipsis;
+  color: #c7c7cc;
+  background: #1c1c1e;
+  border-radius: 4px;
+}
+.term-manager-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: none;
+  gap: 1px;
+  padding: 1px;
+  background: var(--bg-1);
+  border-radius: 6px;
+}
+.term-manager-list li:hover .term-manager-actions,
+.term-manager-list li:focus-within .term-manager-actions {
+  display: flex;
+}
+.term-manager-hint {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.term-manager-hint.center {
+  margin: auto;
+  color: #8e8e93;
+}
+.term-manager-view {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: #1c1c1e;
+}
+@media (max-width: 640px) {
+  .term-manager-list {
+    flex-basis: 190px;
+  }
 }

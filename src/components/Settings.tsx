@@ -564,6 +564,29 @@ export function Settings({
                 />
               </div>
             )}
+          {terminalSend !== undefined &&
+            !isWindows &&
+            snapshot.preferences?.builtinTerminal === true && (
+              <div className="setting-row" data-setting="builtin-terminal-open-in">
+                <SquareTerminal size={18} />
+                <div>
+                  <b>{s.builtinOpenIn}</b>
+                  <p>{s.builtinOpenInHint}</p>
+                </div>
+                <select
+                  aria-label={s.builtinOpenIn}
+                  value={snapshot.preferences?.builtinTerminalOpenIn ?? 'manager'}
+                  onChange={(e) =>
+                    onPrefs({
+                      builtinTerminalOpenIn: e.target.value === 'window' ? 'window' : 'manager',
+                    })
+                  }
+                >
+                  <option value="manager">{s.builtinOpenInManager}</option>
+                  <option value="window">{s.builtinOpenInWindow}</option>
+                </select>
+              </div>
+            )}
           {terminalSend !== undefined && !isWindows && (
             <BuiltinTerminals
               enabled={snapshot.preferences?.builtinTerminal === true}

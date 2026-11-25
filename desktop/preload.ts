@@ -131,7 +131,22 @@ const api: OfficeAPI = {
           list: () => action('office:builtin-terminals', 'list'),
           act: (session: string, what: string) =>
             action('office:builtin-terminals', 'act', session, what),
+          manager: () => action('office:builtin-terminals', 'manager'),
         } as OfficeAPI['builtinTerminals'],
+        // The terminal manager's window: its list, the session it shows, previews, actions.
+        termManager: {
+          list: () => action('office:term-manager', 'list'),
+          selected: () => action('office:term-manager', 'selected'),
+          select: (session: string) => action('office:term-manager', 'select', session),
+          preview: (sessions: string[]) => action('office:term-manager', 'preview', sessions),
+          act: (session: string, what: string) =>
+            action('office:term-manager', 'act', session, what),
+          onSelect: (cb: (session: string) => void) => {
+            const f = (_: unknown, session: string) => cb(session);
+            ipcRenderer.on('office:term-manager-select', f);
+            return () => ipcRenderer.removeListener('office:term-manager-select', f);
+          },
+        } as OfficeAPI['termManager'],
         // Both terminal windows: paste where the keyboard is, and a dropped file's path.
         termView: {
           paste: () => action('office:term-paste'),

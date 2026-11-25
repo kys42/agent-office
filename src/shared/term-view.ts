@@ -27,21 +27,25 @@ export interface TermAttachment {
 }
 
 export type TermCommand =
-  /** Attaches the window to its own session at this size (main reads which one). */
-  | { type: 'attach'; cols: number; rows: number }
+  /**
+   * Attaches the window to its own session at this size (main reads which one). The terminal
+   * manager names the session it means: main attaches only if that is still the one selected.
+   */
+  | { type: 'attach'; cols: number; rows: number; session?: string }
   | { type: 'detach'; viewId: string }
   | { type: 'resize'; viewId: string; cols: number; rows: number }
   /** Flow control: the view has too much output queued (pause) or caught up (resume). */
   | { type: 'flow'; viewId: string; paused: boolean }
   /** Ends the window's session, after the person confirmed it in main's dialog. */
-  | { type: 'kill' };
+  | { type: 'kill'; session?: string };
 
 /** History a view asks for on attach: the screen and a short tail (the transcript holds the rest). */
 export const TERM_VIEW_SCROLLBACK = 200;
 
 /**
  * Checks a command from a terminal window. Anything not exactly one of these shapes is refused:
- * a window never names a session, a program or a folder, only its own view.
+ * a window never names a program or a folder, only its own view (and, for the manager, the
+ * session it selected, which main checks).
  */
 export function parseTermCommand(raw: unknown): TermCommand {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('bad command');
@@ -50,9 +54,19 @@ export function parseTermCommand(raw: unknown): TermCommand {
     if (typeof c.viewId !== 'string' || !VIEW_ID.test(c.viewId)) throw new Error('bad view');
     return c.viewId;
   };
+  const session = () => {
+    if (typeof c.session !== 'string' || !TERM_SESSION.test(c.session))
+      throw new Error('bad session');
+    return c.session;
+  };
   switch (c.type) {
     case 'attach':
-      return { type: 'attach', cols: clampCols(c.cols), rows: clampRows(c.rows) };
+      return {
+        type: 'attach',
+        cols: clampCols(c.cols),
+        rows: clampRows(c.rows),
+        ...(c.session !== undefined && { session: session() }),
+      };
     case 'detach':
       return { type: 'detach', viewId: viewId() };
     case 'resize':
@@ -61,7 +75,7 @@ export function parseTermCommand(raw: unknown): TermCommand {
       if (typeof c.paused !== 'boolean') throw new Error('bad flow');
       return { type: 'flow', viewId: viewId(), paused: c.paused };
     case 'kill':
-      return { type: 'kill' };
+      return { type: 'kill', ...(c.session !== undefined && { session: session() }) };
     default:
       throw new Error('bad command');
   }

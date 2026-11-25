@@ -25,10 +25,17 @@ import { runCommand } from '../server/adapters/claude-live.js';
 import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
 import { TermWindows } from './term-windows.js';
+import { TermManagerWindow } from './term-manager.js';
 import { TermViews } from './term-views.js';
 import {
   builtinAction,
   builtinListing,
+  managerPreviews,
+  managerSelect,
+  rowActions,
+  termTitle,
+  type SessionWindows,
+  type TermManagerDeps,
   officeAgentsIn,
   psRss,
   type TerminalLocator,
@@ -133,7 +140,6 @@ import {
   type Rect,
 } from '../src/shared/dock-geometry.js';
 import { TermBuiltin, builtinSupported } from './term-builtin.js';
-import type { SessionStats } from './term-host/protocol.js';
 import {
   defaultTerminalDeps,
   focusTerminal,
@@ -186,6 +192,8 @@ let main: BrowserWindow | null = null,
 let cards: CardWindows;
 let shellWindows: ShellWindows;
 let termWindows: TermWindows;
+// The terminal manager (터미널 관리 창): one window over every built-in session.
+let termManager: TermManagerWindow;
 let readerWindows: ReaderWindows;
 let notifier: Notifier;
 // The colleague card open in the big office, as its page reports it (notifications skip it).
@@ -228,7 +236,10 @@ else {
       watch,
       // A preview card stays while the person works in a terminal or reader window it opened.
       companion: () =>
-        !!shellWindows?.focused() || !!termWindows?.focused() || !!readerWindows?.focused(),
+        !!shellWindows?.focused() ||
+        !!termWindows?.focused() ||
+        !!termManager?.focused() ||
+        !!readerWindows?.focused(),
       material: () => cardMaterial(delivery.latest),
     });
     app.on('before-quit', () => cards.dispose());
@@ -241,6 +252,14 @@ else {
     });
     // The built-in terminal's windows (#401): a view of one session each.
     termWindows = new TermWindows({
+      index,
+      preload: path.join(__dirname, 'preload.cjs'),
+      dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
+      secure,
+      blurred: () => cards.recheck(),
+    });
+    // The terminal manager: the same view, one session at a time, chosen in its own list.
+    termManager = new TermManagerWindow({
       index,
       preload: path.join(__dirname, 'preload.cjs'),
       dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
@@ -292,6 +311,7 @@ else {
       if (!s.preferences?.privacy) return;
       shellWindows.closeAll();
       termWindows.closeAll();
+      termManager.closeAll();
       readerWindows.closeAll();
     };
     // Settings › Look › Glass: cards on the clearer glass while the person set their own level.
@@ -373,6 +393,7 @@ else {
       cards.reseat();
       shellWindows.reseat();
       termWindows.reseat();
+      termManager.reseat();
       readerWindows.reseat();
     };
     screen.on('display-removed', reseat);
@@ -835,9 +856,18 @@ function trustedReader(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFr
   if (readerWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
   trusted(e);
 }
-/** The built-in terminal's view IPC trusts its own windows only. */
+/** The built-in terminal's view IPC trusts its own windows (and the terminal manager) only. */
 function trustedTerm(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
-  if (termWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
+  if (
+    (termWindows.owns(e.sender) || termManager.owns(e.sender)) &&
+    e.senderFrame === e.sender.mainFrame
+  )
+    return;
+  throw new Error(m().desktop.untrustedWindow);
+}
+/** The terminal manager's own IPC (its list, selection, previews) trusts that window only. */
+function trustedManager(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
+  if (termManager.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
   throw new Error(m().desktop.untrustedWindow);
 }
 /** The mini terminal's IPC also trusts its own windows (and nothing else does). */
@@ -1000,9 +1030,6 @@ const terminalLocators = (fresh: boolean): Partial<Record<string, TerminalLocato
   claude: (nativeId) => locateTerminal(nativeId, { fresh }),
   codex: (nativeId) => findCodexTerminal(nativeId, { fresh }),
 });
-/** What runs in a built-in session, for its window's header: the agent and its folder. */
-const termTitle = (s: Pick<SessionStats, 'argv' | 'cwd'>) =>
-  `${path.basename(s.argv[0] ?? '')} · ${path.basename(s.cwd) || s.cwd}`;
 /**
  * The built-in terminal's windows (#401, docs/development/TERM-HOST.md): each shows one session
  * main chose (a jump, a launch), attached through a connection of its own only while it is shown.
@@ -1036,26 +1063,59 @@ function setupBuiltinViews(builtin: TermBuiltin) {
       if (!sender.isDestroyed()) sender.send('office:term-lost', viewId);
     },
   });
-  /**
-   * "Go to its terminal" for a built-in session: its window, opened beside the window in front
-   * (or brought forward). Refused while screen content is hidden, or once the session is gone.
-   */
-  builtin.show = async (session) => {
+  /** Beside the window in front, floating if that one does (as every popup opens). */
+  const placement = () => {
+    const from = BrowserWindow.getFocusedWindow() ?? main;
+    const shown = !!from && !from.isDestroyed();
+    return {
+      anchor: shown ? from.getBounds() : screen.getPrimaryDisplay().workArea,
+      float: shown && popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+    };
+  };
+  /** A session's own window (refused while hidden, or once the session is gone). */
+  const showWindow = async (session: string) => {
     if (delivery.latest?.preferences?.privacy) throw new TerminalFocusError(m().shell.term.hidden);
     const stats = await builtin.session(session).catch(() => null);
     if (!stats) throw new TerminalFocusError(m().shell.gone);
     // Hidden while it was looked up: its title and folder never show after that.
     if (delivery.latest?.preferences?.privacy) throw new TerminalFocusError(m().shell.term.hidden);
-    const from = BrowserWindow.getFocusedWindow() ?? main;
-    const anchor =
-      from && !from.isDestroyed() ? from.getBounds() : screen.getPrimaryDisplay().workArea;
+    const { anchor, float } = placement();
     termWindows.open(session, { session, title: termTitle(stats), cwd: stats.cwd }, anchor, {
-      float:
-        !!from &&
-        !from.isDestroyed() &&
-        popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+      float,
     });
     return m().desktop.terminal.builtinOpened;
+  };
+  /** What the manager's requests read (desktop/term-list.ts); refusals in today's language. */
+  const managerDeps: TermManagerDeps = {
+    hidden: () => !!delivery.latest?.preferences?.privacy,
+    listing: (fresh) => builtin.listing(fresh),
+    screen: (id) => builtin.screen(id),
+    get messages() {
+      return { hidden: m().shell.term.hidden, gone: m().shell.gone };
+    },
+  };
+  /** The terminal manager, showing `session` when one is named (refused while hidden). */
+  const showManager = async (session?: string) => {
+    if (delivery.latest?.preferences?.privacy) throw new TerminalFocusError(m().shell.term.hidden);
+    const target = session ? await managerSelect(managerDeps, session) : undefined;
+    const { anchor, float } = placement();
+    termManager.show(anchor, target, { float });
+    return m().desktop.terminal.builtinOpened;
+  };
+  /**
+   * "Go to its terminal" for a built-in session: the terminal manager showing it, or its own
+   * window, as Settings chose (터미널로 이동 시). Refused while screen content is hidden, or once
+   * the session is gone.
+   */
+  builtin.show = async (session) => {
+    if (delivery.latest?.preferences?.builtinTerminalOpenIn === 'window')
+      return showWindow(session);
+    try {
+      return await showManager(session);
+    } catch (error) {
+      if (error instanceof TerminalFocusError) throw error;
+      throw new TerminalFocusError((error as Error).message);
+    }
   };
   /**
    * The office's conversations running in built-in sessions (their folders' conversations,
@@ -1106,19 +1166,28 @@ function setupBuiltinViews(builtin: TermBuiltin) {
    * Only the office's own windows ask; nothing here starts a daemon.
    */
   const rss = psRss(runCommand);
+  /** Each session's own window: what a list row opens, hides and shows as open. */
+  const ownWindows: SessionWindows = {
+    open: showWindow,
+    close: (id) => termWindows.close(id),
+    has: (id) => termWindows.has(id),
+  };
+  const listing = () =>
+    builtinListing({
+      supported: builtinSupported(),
+      listing: (fresh) => builtin.listing(fresh),
+      hidden: () => !!delivery.latest?.preferences?.privacy,
+      windowOpen: (id) => ownWindows.has(id),
+      agents: (sessions) => agentsIn(sessions, false),
+      memory: rss,
+    });
   ipcMain.handle(
     'office:builtin-terminals',
     async (e, op: unknown, session: unknown, act: unknown) => {
       trusted(e);
-      if (op === 'list')
-        return builtinListing({
-          supported: builtinSupported(),
-          listing: (fresh) => builtin.listing(fresh),
-          hidden: () => !!delivery.latest?.preferences?.privacy,
-          windowOpen: (id) => termWindows.has(id),
-          agents: (sessions) => agentsIn(sessions, false),
-          memory: rss,
-        });
+      if (op === 'list') return listing();
+      // Settings › 내장 터미널, the command palette: the terminal manager.
+      if (op === 'manager') return showManager();
       if (op !== 'act') throw new Error(m().desktop.badRequest);
       let request;
       try {
@@ -1127,29 +1196,82 @@ function setupBuiltinViews(builtin: TermBuiltin) {
         throw new Error(m().desktop.badRequest);
       }
       return builtinAction(
-        {
-          show: (id) => builtin.show!(id),
-          hide: (id) => termWindows.close(id),
-          kill: (id) => confirmKill(id, e.sender),
-        },
+        // A row opens the session's own window (whatever "go to terminal" opens), so its
+        // state and 숨기기 refer to that very window.
+        rowActions(ownWindows, (id) => confirmKill(id, e.sender)),
         request.session,
         request.action,
       );
     },
   );
+  /**
+   * The terminal manager's own requests: the same list as Settings, which session it shows
+   * (checked against the daemon's list), previews of a few others, and the same actions as
+   * Settings (its own window, hiding that window, ending after main's confirmation).
+   */
+  ipcMain.handle(
+    'office:term-manager',
+    async (e, op: unknown, arg: unknown, act: unknown): Promise<unknown> => {
+      trustedManager(e);
+      switch (op) {
+        case 'list':
+          return listing();
+        case 'selected':
+          return termManager.selected?.session ?? null;
+        case 'select': {
+          const target = await managerSelect(managerDeps, arg).catch((error: Error) => {
+            throw new Error(
+              error.message.startsWith('bad ') ? m().desktop.badRequest : error.message,
+            );
+          });
+          termManager.select(target);
+          return target;
+        }
+        case 'preview':
+          try {
+            return await managerPreviews(managerDeps, arg);
+          } catch {
+            throw new Error(m().desktop.badRequest);
+          }
+        case 'act': {
+          let request;
+          try {
+            request = parseBuiltinAction(arg, act);
+          } catch {
+            throw new Error(m().desktop.badRequest);
+          }
+          return builtinAction(
+            rowActions(ownWindows, (id) => confirmKill(id, e.sender)),
+            request.session,
+            request.action,
+          );
+        }
+        default:
+          throw new Error(m().desktop.badRequest);
+      }
+    },
+  );
+  /** A terminal window's, or the manager's, own window actions. */
+  const termPopups = (sender: Electron.WebContents) =>
+    termManager.owns(sender) ? termManager : termWindows;
   ipcMain.handle('office:term-window', async (e, what: unknown) => {
     trustedTerm(e);
-    if (what === 'target') return termWindows.target(e.sender);
-    if (what === 'close' || what === 'focus') return termWindows.action(e.sender, what);
-    if (what === 'top') return termWindows.onTop(e.sender);
+    const popups = termPopups(e.sender);
+    if (what === 'target') {
+      if (popups === termWindows) return termWindows.target(e.sender);
+      return termManager.selected;
+    }
+    if (what === 'close' || what === 'focus') return popups.action(e.sender, what);
+    if (what === 'top') return popups.onTop(e.sender);
     if (what === 'top-on' || what === 'top-off')
-      return termWindows.setOnTop(e.sender, what === 'top-on');
+      return popups.setOnTop(e.sender, what === 'top-on');
     throw new Error(m().desktop.badRequest);
   });
   // A terminal window's right-click Paste: main's own paste into that window, where xterm takes
   // it like ⌘V (bracketed paste included). The page never reads the clipboard itself.
   ipcMain.handle('office:term-paste', (e) => {
-    const owned = shellWindows.owns(e.sender) || termWindows.owns(e.sender);
+    const owned =
+      shellWindows.owns(e.sender) || termWindows.owns(e.sender) || termManager.owns(e.sender);
     if (!owned || e.senderFrame !== e.sender.mainFrame)
       throw new Error(m().desktop.untrustedWindow);
     e.sender.paste();
@@ -1166,7 +1288,14 @@ function setupBuiltinViews(builtin: TermBuiltin) {
     if (delivery.latest?.preferences?.privacy && command.type === 'attach')
       throw new Error(m().shell.term.hidden);
     const owner = e.sender.id;
-    const { session } = termWindows.target(e.sender);
+    // A terminal window's session is fixed; the manager's is the one it selected last, and a
+    // command naming another (a view left behind by a switch) is refused.
+    const session = termManager.owns(e.sender)
+      ? termManager.selected?.session
+      : termWindows.target(e.sender).session;
+    if (!session) throw new Error(m().shell.gone);
+    if ('session' in command && command.session !== undefined && command.session !== session)
+      throw new Error(m().shell.gone);
     switch (command.type) {
       case 'attach': {
         // Its lifetime before the first await: a reload meanwhile makes this request stale.

@@ -7,12 +7,32 @@ import type { ListResult, SessionStats } from '../desktop/term-host/protocol.js'
 import {
   builtinAction,
   builtinListing,
+  managerPreviews,
+  managerSelect,
   officeAgentsIn,
   parseRss,
   psRss,
+  rowActions,
   type TermListDeps,
+  type TermManagerDeps,
 } from '../desktop/term-list.js';
-import { formatBytes, parseBuiltinAction } from '../src/shared/term-list.js';
+import {
+  BUILTIN_OPEN_IN,
+  formatBytes,
+  managerKey,
+  managerRows,
+  outputMoved,
+  parseBuiltinAction,
+  parseManagerSession,
+  parsePreviewRequest,
+  previewLines,
+  previewTargets,
+  stepSelection,
+  TERM_MANAGER_ENDED_MAX,
+  TERM_MANAGER_PREVIEW_COLS,
+  TERM_MANAGER_PREVIEW_MAX,
+  type BuiltinSessionRow,
+} from '../src/shared/term-list.js';
 
 /** Settings › 내장 터미널: the list main builds for the page, and the actions on one session. */
 
@@ -353,4 +373,226 @@ test('the daemon list keeps ended sessions; the lookups still see live ones only
   );
   builtin.close();
   await t.host.shutdown();
+});
+
+// ─── The terminal manager (터미널 관리 창) ──────────────────────────────────────────────────
+
+const row = (over: Partial<BuiltinSessionRow>): BuiltinSessionRow => ({
+  id: 'ao-1',
+  program: 'claude',
+  cwd: '/work/app',
+  agents: [],
+  startedAt: 1_000,
+  pid: 100,
+  windowOpen: false,
+  attached: 0,
+  ...over,
+});
+
+const managerDeps = (over: Partial<TermManagerDeps> = {}): TermManagerDeps => ({
+  hidden: () => false,
+  listing: async () =>
+    list([
+      stats({ id: 'ao-1', cwd: '/work/app' }),
+      stats({ id: 'ao-2', argv: ['/bin/codex'], cwd: '/work/b' }),
+      stats({ id: 'done', exit: { code: 0, signal: null, at: 3_000 } }),
+    ]),
+  screen: async (id) => ({ lines: [`${id} top`, '', `${id} prompt ❯`, ''], cursor: { y: 2 } }),
+  messages: { hidden: 'HIDDEN', gone: 'GONE' },
+  ...over,
+});
+
+test('the list carries each session output count for the busy hint', async () => {
+  const listing = await builtinListing(
+    deps({ listing: async () => list([stats({ id: 'a', bytesIn: 512 })]) }),
+  );
+  assert.equal(listing.sessions[0].output, 512);
+  assert.equal(outputMoved(undefined, row({ output: 10 })), false, 'unknown before: quiet');
+  assert.equal(outputMoved(row({ output: 10 }), row({ output: 10 })), false);
+  assert.equal(outputMoved(row({ output: 10 }), row({ output: 11 })), true);
+  assert.equal(
+    outputMoved(row({ output: 10 }), row({ output: 99, exit: { code: 0, signal: null, at: 1 } })),
+    false,
+    'an ended session is never busy',
+  );
+});
+
+test('the manager lists every running session and only the latest few ended ones', () => {
+  const ended = Array.from({ length: 6 }, (_, i) =>
+    row({ id: `e${i}`, exit: { code: 0, signal: null, at: 100 - i } }),
+  );
+  const listing = {
+    supported: true,
+    hidden: false,
+    daemon: null,
+    sessions: [row({ id: 'r1' }), row({ id: 'r2' }), ...ended],
+  };
+  assert.deepEqual(
+    managerRows(listing).map((r) => r.id),
+    ['r1', 'r2', 'e0', 'e1', 'e2'],
+  );
+  assert.equal(TERM_MANAGER_ENDED_MAX, 3);
+  assert.deepEqual(managerRows(null), []);
+});
+
+test('previews: the running others only, a few at most, none while hidden', () => {
+  const rows = [
+    ...Array.from({ length: 12 }, (_, i) => row({ id: `r${i}` })),
+    row({ id: 'x', exit: { code: 0, signal: null, at: 1 } }),
+  ];
+  const targets = previewTargets(rows, 'r0', false);
+  assert.equal(targets.length, TERM_MANAGER_PREVIEW_MAX);
+  assert.ok(!targets.includes('r0'), 'the selected one has a live view instead');
+  assert.ok(!targets.includes('x'), 'an ended one has no screen to read');
+  assert.deepEqual(previewTargets(rows, 'r0', true), []);
+});
+
+test('a preview is the last non-blank rows up to the cursor, cleaned and cut', () => {
+  assert.deepEqual(
+    previewLines({
+      lines: ['one', '   ', 'two\x07', 'three  ', 'four', 'below the cursor'],
+      cursor: { y: 4 },
+    }),
+    ['two', 'three', 'four'],
+  );
+  assert.deepEqual(previewLines({ lines: ['x'.repeat(500)], cursor: { y: 0 } }), [
+    'x'.repeat(TERM_MANAGER_PREVIEW_COLS),
+  ]);
+  assert.deepEqual(previewLines({ lines: ['', ''], cursor: { y: 1 } }), []);
+});
+
+test('the manager selects only a session the daemon lists, never while hidden', async () => {
+  assert.deepEqual(await managerSelect(managerDeps(), 'ao-2'), {
+    session: 'ao-2',
+    title: 'codex · b',
+    cwd: '/work/b',
+  });
+  // An ended one still shows its last screen.
+  assert.equal((await managerSelect(managerDeps(), 'done')).session, 'done');
+  await assert.rejects(managerSelect(managerDeps(), 'nope'), /GONE/);
+  await assert.rejects(managerSelect(managerDeps(), '../etc'), /bad session/);
+  await assert.rejects(managerSelect(managerDeps(), 42), /bad session/);
+  await assert.rejects(managerSelect(managerDeps({ hidden: () => true }), 'ao-1'), /HIDDEN/);
+  // Hidden while the list was read: nothing about it is answered.
+  let hidden = false;
+  const late = managerDeps({
+    hidden: () => hidden,
+    listing: async () => {
+      hidden = true;
+      return list([stats({ id: 'ao-1' })]);
+    },
+  });
+  await assert.rejects(managerSelect(late, 'ao-1'), /HIDDEN/);
+  await assert.rejects(managerSelect(managerDeps({ listing: async () => null }), 'ao-1'), /GONE/);
+});
+
+test('previews read running sessions only, and nothing while hidden', async () => {
+  const read: string[] = [];
+  const deps = managerDeps({
+    screen: async (id) => {
+      read.push(id);
+      if (id === 'ao-2') throw new Error('timeout');
+      return { lines: ['$ ls', 'a  b'], cursor: { y: 1 } };
+    },
+  });
+  assert.deepEqual(await managerPreviews(deps, ['ao-1', 'ao-2', 'done', 'gone', 'ao-1']), {
+    'ao-1': ['$ ls', 'a  b'],
+  });
+  assert.deepEqual(read.sort(), ['ao-1', 'ao-2'], 'ended or unknown sessions are never read');
+  read.length = 0;
+  assert.deepEqual(await managerPreviews(managerDeps({ hidden: () => true }), ['ao-1']), {});
+  // Hidden while the screens were read: dropped.
+  let hidden = false;
+  const late = managerDeps({
+    hidden: () => hidden,
+    screen: async () => {
+      hidden = true;
+      return { lines: ['secret'], cursor: { y: 0 } };
+    },
+  });
+  assert.deepEqual(await managerPreviews(late, ['ao-1']), {});
+  assert.deepEqual(await managerPreviews(managerDeps(), []), {});
+  await assert.rejects(managerPreviews(managerDeps(), 'ao-1'));
+  await assert.rejects(managerPreviews(managerDeps(), ['ok', '../x']));
+  await assert.rejects(
+    managerPreviews(
+      managerDeps(),
+      Array.from({ length: TERM_MANAGER_PREVIEW_MAX + 1 }, (_, i) => `s${i}`),
+    ),
+  );
+});
+
+test('the manager keys: ⌘1…⌘9, ⌘⇧[ ], ⌃Tab, ⌘W; everything else is the terminal’s', () => {
+  const key = (over: Partial<Parameters<typeof managerKey>[0]>) =>
+    managerKey({
+      type: 'keydown',
+      key: '',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      ...over,
+    });
+  assert.deepEqual(key({ metaKey: true, key: '1', code: 'Digit1' }), { select: 0 });
+  assert.deepEqual(key({ metaKey: true, key: '9', code: 'Digit9' }), { select: 8 });
+  assert.equal(key({ metaKey: true, key: '0', code: 'Digit0' }), null, '⌘0 is the font reset');
+  assert.deepEqual(key({ metaKey: true, shiftKey: true, key: '{', code: 'BracketLeft' }), {
+    step: -1,
+  });
+  assert.deepEqual(key({ metaKey: true, shiftKey: true, key: '}', code: 'BracketRight' }), {
+    step: 1,
+  });
+  assert.deepEqual(key({ ctrlKey: true, key: 'Tab' }), { step: 1 });
+  assert.deepEqual(key({ ctrlKey: true, shiftKey: true, key: 'Tab' }), { step: -1 });
+  assert.deepEqual(key({ metaKey: true, key: 'w', code: 'KeyW' }), { close: true });
+  assert.equal(key({ key: '1', code: 'Digit1' }), null);
+  assert.equal(key({ ctrlKey: true, key: 'c', code: 'KeyC' }), null);
+  assert.equal(key({ metaKey: true, key: 'c', code: 'KeyC' }), null);
+  assert.equal(key({ metaKey: true, altKey: true, key: '1', code: 'Digit1' }), null);
+  assert.equal(key({ metaKey: true, key: '1', code: 'Digit1', isComposing: true }), null);
+  assert.equal(key({ type: 'keyup', metaKey: true, key: '1', code: 'Digit1' }), null);
+});
+
+test('stepping wraps around the rows; with none selected it starts at the first', () => {
+  const rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  assert.equal(stepSelection(rows, 'a', 1), 'b');
+  assert.equal(stepSelection(rows, 'c', 1), 'a');
+  assert.equal(stepSelection(rows, 'a', -1), 'c');
+  assert.equal(stepSelection(rows, null, 1), 'a');
+  assert.equal(stepSelection([], 'a', 1), null);
+});
+
+test('manager sessions and the open-in choice are checked', () => {
+  assert.equal(parseManagerSession('ao-1'), 'ao-1');
+  for (const bad of ['', '../x', 'a b', 1, null, 'x'.repeat(65)])
+    assert.throws(() => parseManagerSession(bad));
+  assert.deepEqual([...BUILTIN_OPEN_IN], ['manager', 'window']);
+  assert.deepEqual(parsePreviewRequest(['a', 'a', 'b']), ['a', 'b']);
+});
+
+test('a row opens, hides and reports the same window: its own, not the manager', async () => {
+  const open = new Set<string>();
+  const calls: string[] = [];
+  const windows = {
+    open: async (id: string) => {
+      calls.push(`open:${id}`);
+      open.add(id);
+    },
+    close: (id: string) => open.delete(id),
+    has: (id: string) => open.has(id),
+  };
+  const actions = rowActions(windows, async (id) => {
+    calls.push(`kill:${id}`);
+    return true;
+  });
+  const listing = () =>
+    builtinListing(deps({ windowOpen: windows.has, listing: async () => list([stats({})]) }));
+  assert.equal((await listing()).sessions[0].windowOpen, false);
+  assert.equal(await builtinAction(actions, 'ao-1', 'open'), true);
+  assert.equal((await listing()).sessions[0].windowOpen, true, 'opened shows as open');
+  assert.equal(await builtinAction(actions, 'ao-1', 'hide'), true, 'and can be hidden again');
+  assert.equal((await listing()).sessions[0].windowOpen, false);
+  assert.equal(await builtinAction(actions, 'ao-1', 'hide'), false);
+  assert.equal(await builtinAction(actions, 'ao-1', 'kill'), true);
+  assert.deepEqual(calls, ['open:ao-1', 'kill:ao-1']);
 });

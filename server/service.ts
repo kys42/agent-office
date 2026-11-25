@@ -40,6 +40,7 @@ import {
 import { mergeSessions } from './adapters/merge.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
 import { LAUNCH_DESTINATIONS } from '../src/shared/launch.js';
+import { BUILTIN_OPEN_IN } from '../src/shared/term-list.js';
 import { PET_NAME_CHOICES, PET_TALLY_GROUPS } from '../src/shared/view-prefs.js';
 import type { PetNameMode, PetTallyGroup } from '../src/shared/types.js';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE_MAX } from '../src/shared/bookmarks.js';
@@ -198,6 +199,7 @@ const prefsSchema = z
     launchDestination: z.enum(LAUNCH_DESTINATIONS).optional(),
     builtinTerminal: z.boolean().optional(),
     builtinTerminalWindow: z.boolean().optional(),
+    builtinTerminalOpenIn: z.enum(BUILTIN_OPEN_IN).optional(),
     textSize: z.enum(['small', 'normal', 'large', 'larger']).optional(),
     readingFont: z.enum(['system', 'pretendard', 'mono']).optional(),
     windowGlass: z.number().int().min(0).max(70).nullable().optional(),
