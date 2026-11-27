@@ -90,6 +90,7 @@ test('missing view preferences are the behaviour from before', () => {
     tinyFinalDot: true,
     dockPill: 'subdued',
     dockPillResetAt: null,
+    builtinTerminal: false,
     panelWidthsResetAt: null,
     helperDesks: true,
     helperStackAt: HELPER_STACK_AT,
@@ -309,7 +310,7 @@ test('missing screen choices are the look from before', () => {
       petting: true,
     },
     // The row's, floor's and tiny's pills count like the pet by default too.
-    dock: { ...desk, hideRead: true, tally: true },
+    dock: { ...desk, hideRead: true, tally: true, terminalButton: true },
     tiny: { effects: true, tally: true },
     // The big office's floating way back to the dock shows unless switched off.
     office: { ...desk, returnButton: true },
@@ -339,7 +340,9 @@ test('screen choices resolve per mode; nonsense falls back to the default', () =
     focus: true,
     hideRead: false,
     tally: false,
+    terminalButton: true,
   });
+  assert.equal(resolveViews({ dock: { terminalButton: false } }).dock.terminalButton, false);
   assert.deepEqual(v.tiny, { effects: false, tally: true });
   assert.equal(resolveViews({ tiny: { tally: false } }).tiny.tally, false);
   // A tally switched off on one screen leaves the others (and the pet) counting.

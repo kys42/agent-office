@@ -88,6 +88,7 @@ export const dock: Messages['dock'] = {
     hide: '숨기기 · 트레이에서 다시 열어요',
     grip: '끌어서 옮기기',
     settings: '설정 · 표시, 알림, 연결',
+    termManager: '터미널 관리 창',
   },
   card: {
     missing: '이 동료를 찾지 못했어요',

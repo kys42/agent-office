@@ -95,6 +95,7 @@ export const dock = {
     hide: 'Hide · bring it back from the tray',
     grip: 'Drag to move',
     settings: 'Settings · display, notifications, connections',
+    termManager: 'Terminal manager',
   },
   card: {
     missing: "Couldn't find this teammate",

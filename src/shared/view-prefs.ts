@@ -21,6 +21,8 @@ export interface ViewPrefs {
   tinyFinalDot: boolean;
   dockPill: DockPillVisibility;
   dockPillResetAt: number | null;
+  /** The experimental built-in terminal is on (its dock button and manager need it). */
+  builtinTerminal: boolean;
   panelWidthsResetAt: number | null;
   helperDesks: boolean;
   helperStackAt: number;
@@ -46,7 +48,7 @@ export interface ResolvedViews {
     petting: boolean;
   };
   /** `tally`: the pill's numbers (the pet's, counting `pet.tallyGroups`); off, the old summary. */
-  dock: DeskView & { hideRead: boolean; tally: boolean };
+  dock: DeskView & { hideRead: boolean; tally: boolean; terminalButton: boolean };
   tiny: { effects: boolean; tally: boolean };
   /** `returnButton`: the floating pill back to the dock (desktop app only). */
   office: DeskView & { returnButton: boolean };
@@ -92,7 +94,12 @@ export function resolveViews(v?: ViewSettings | null): ResolvedViews {
       turnEffect: on(v?.pet?.turnEffect),
       petting: on(v?.pet?.petting),
     },
-    dock: { ...deskView(v?.dock), hideRead: on(v?.dock?.hideRead), tally: on(v?.dock?.tally) },
+    dock: {
+      ...deskView(v?.dock),
+      hideRead: on(v?.dock?.hideRead),
+      tally: on(v?.dock?.tally),
+      terminalButton: on(v?.dock?.terminalButton),
+    },
     tiny: { effects: on(v?.tiny?.effects), tally: on(v?.tiny?.tally) },
     office: { ...deskView(v?.office), returnButton: on(v?.office?.returnButton) },
   };
@@ -128,6 +135,7 @@ export function viewPrefs(p?: Partial<Preferences> | null): ViewPrefs {
       ? p!.dockPill!
       : 'subdued',
     dockPillResetAt: stamp(p?.dockPillResetAt),
+    builtinTerminal: p?.builtinTerminal === true,
     panelWidthsResetAt: stamp(p?.panelWidthsResetAt),
     helperDesks: p?.helperDesks !== false,
     helperStackAt: helperStackAt(p),

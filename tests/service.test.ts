@@ -229,6 +229,8 @@ test('Screen choices (#324) save mode by mode, merge deeply, and refuse unknown 
       { pet: { size: 2 } },
       { dock: { hideRead: 1 } },
       { dock: { tally: 'on' } },
+      { dock: { terminalButton: 'on' } },
+      { tiny: { terminalButton: false } },
       { dock: { tallyGroups: ['working'] } },
       { tiny: { tally: 1 } },
       { tiny: { branch: false } },

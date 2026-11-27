@@ -170,6 +170,9 @@ export const settings = {
       chatOutputs: 'Outputs in the chat',
       chatOutputsHint:
         'A small chip under the message that made a file. Click to preview it or open it in its app.',
+      terminalButton: 'Terminal manager button',
+      terminalButtonHint:
+        'Puts a terminal icon on the pill of the tiny dock and desk rows. It opens the terminal manager window.',
       returnButton: 'Back-to-dock button',
       returnButtonHint:
         'A large button floats at the bottom of the office to go back to the dock as you left it.',

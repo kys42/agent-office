@@ -147,6 +147,7 @@ const viewsSchema = z
         ...deskViewShape,
         hideRead: z.boolean().optional(),
         tally: z.boolean().optional(),
+        terminalButton: z.boolean().optional(),
       })
       .strict()
       .optional(),
