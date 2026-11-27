@@ -624,6 +624,8 @@ export interface ViewSettings {
     hideRead?: boolean;
     /** The pill counts by group like the pet (the pet's `tallyGroups`). Off: "N명 · 기다려요 N". */
     tally?: boolean;
+    /** The terminal-manager button on the pill (row, floor and tiny; with the built-in terminal on). */
+    terminalButton?: boolean;
   };
   tiny?: {
     /** Focus effects and paper piles on tiny desks. */

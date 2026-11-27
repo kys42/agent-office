@@ -86,7 +86,7 @@ import { useI18n } from '../lib/i18n';
 import { isWindows } from '../lib/platform';
 import { setTermFontSize, useTermFontSize } from '../lib/termFont';
 import { TERM_FONT } from '../shared/term-keys';
-import { isDesktop } from '../lib/api';
+import { api, isDesktop } from '../lib/api';
 import { notifyPreferences } from '../shared/notify-plan';
 import { cardReadSettings } from '../shared/card-reads';
 import {
@@ -849,6 +849,15 @@ export function Settings({
               checked={shows.dock.hideRead}
               onChange={() => setView('dock', { hideRead: !shows.dock.hideRead })}
             />
+            {snapshot.preferences?.builtinTerminal === true && !!api.builtinTerminals?.manager && (
+              <SwitchRow
+                icon={SquareTerminal}
+                label={v.desk.terminalButton}
+                hint={v.desk.terminalButtonHint}
+                checked={shows.dock.terminalButton}
+                onChange={() => setView('dock', { terminalButton: !shows.dock.terminalButton })}
+              />
+            )}
           </ViewCard>
         )}
         {isDesktop && (

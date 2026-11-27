@@ -20,6 +20,7 @@ import {
   GitBranch,
   Pin,
   Settings,
+  SquareTerminal,
   Undo2,
   Terminal,
   X,
@@ -230,6 +231,12 @@ export function DeskRow({
         hideRead: true,
       }
     : display.views.dock;
+  const showTermManager =
+    !preview &&
+    !privacy &&
+    display.builtinTerminal &&
+    display.views.dock.terminalButton &&
+    !!api.builtinTerminals?.manager;
   const bringBack = onReturn ? { zones: model.zones, onReturn } : undefined;
   const baseLayout = useMemo(
     () =>
@@ -1080,6 +1087,19 @@ export function DeskRow({
           size={icon}
           blocked={replying ? t.dock.peek.blockedReply : undefined}
         />
+        {/* Terminal manager button: only with the built-in terminal on (desktop macOS/Linux), as the palette. */}
+        {showTermManager && (
+          <button
+            className="icon-btn dock-term-button"
+            aria-label={t.dock.tips.termManager}
+            data-tip={t.dock.tips.termManager}
+            onClick={() =>
+              void api.builtinTerminals?.manager?.().catch((e: Error) => notify(e.message))
+            }
+          >
+            <SquareTerminal size={icon} />
+          </button>
+        )}
         {/* Settings as its own button here (the View menu leaves it out): the pill has room. */}
         {hasSettings && (
           <button

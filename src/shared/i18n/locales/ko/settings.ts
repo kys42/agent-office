@@ -165,6 +165,9 @@ export const settings: Messages['settings'] = {
       chatOutputs: '대화 속 산출물',
       chatOutputsHint:
         '대화에서 파일을 만든 메시지 아래에 작은 칩을 둬요. 누르면 미리보기나 기본 앱으로 열려요.',
+      terminalButton: '터미널 관리 버튼',
+      terminalButtonHint:
+        '쪼꼬미·데스크 줄의 알약에 터미널 아이콘을 둬요. 누르면 터미널 관리 창이 열려요.',
       returnButton: '돌아가기 버튼',
       returnButtonHint: '사무실 아래쪽에 큰 버튼을 띄워, 두고 온 데스크 모양으로 바로 돌아가요.',
     },

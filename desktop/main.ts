@@ -304,7 +304,8 @@ else {
         .map(viewer);
     // Follow the language the collector actually resolved, so tray and windows always agree.
     const followLanguage = (s: Snapshot) => {
-      if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
+      const relabel = s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale);
+      if (relabel || (tray && trayTermShown !== termTrayOn())) buildTray();
     };
     // Hiding the screen's content (화면 내용 숨기기) closes the popup windows: tmux keeps the
     // shells, and a reader closes like the in-page one does.
@@ -401,10 +402,19 @@ else {
     screen.on('display-metrics-changed', reseat);
   });
 }
-/** Tray labels are rebuilt whenever the office language changes. */
+/** Opens the terminal manager (set once the built-in terminal views exist). */
+let openTermManager: (() => Promise<unknown>) | undefined;
+/** The tray's 터미널 관리 창 item is live only with the experimental setting on, and while content shows. */
+const termTrayOn = () =>
+  builtinSupported() &&
+  delivery.latest?.preferences?.builtinTerminal === true &&
+  !delivery.latest?.preferences?.privacy;
+let trayTermShown: boolean | undefined;
+/** Tray labels are rebuilt whenever the office language changes (or the terminal setting does). */
 function buildTray() {
   if (!tray || tray.isDestroyed()) return;
   const t = m().desktop.tray;
+  trayTermShown = termTrayOn();
   tray.setToolTip(t.tooltip);
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -413,6 +423,14 @@ function buildTray() {
       { label: t.row, click: () => showDock('row') },
       { label: t.floor, click: () => showDock('floor') },
       { type: 'separator' },
+      {
+        label: t.termManager,
+        enabled: trayTermShown,
+        click: () =>
+          void openTermManager?.().catch((e: Error) =>
+            dialog.showErrorBox(t.termManager, e.message),
+          ),
+      },
       { label: t.settings, click: () => showSettings() },
       { type: 'separator' },
       {
@@ -1103,6 +1121,7 @@ function setupBuiltinViews(builtin: TermBuiltin) {
     termManager.show(anchor, target, { float });
     return m().desktop.terminal.builtinOpened;
   };
+  openTermManager = () => showManager();
   /**
    * "Go to its terminal" for a built-in session: the terminal manager showing it, or its own
    * window, as Settings chose (터미널로 이동 시). Refused while screen content is hidden, or once
