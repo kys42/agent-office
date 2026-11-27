@@ -305,7 +305,9 @@ else {
     // Follow the language the collector actually resolved, so tray and windows always agree.
     const followLanguage = (s: Snapshot) => {
       const relabel = s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale);
-      if (relabel || (tray && trayTermShown !== termTrayOn())) buildTray();
+      // From the snapshot being delivered: `delivery.latest` may still be the previous one.
+      if (relabel || (tray && trayTermShown !== termTrayOn(s.preferences)))
+        buildTray(s.preferences);
     };
     // Hiding the screen's content (화면 내용 숨기기) closes the popup windows: tmux keeps the
     // shells, and a reader closes like the in-page one does.
@@ -405,16 +407,14 @@ else {
 /** Opens the terminal manager (set once the built-in terminal views exist). */
 let openTermManager: (() => Promise<unknown>) | undefined;
 /** The tray's 터미널 관리 창 item is live only with the experimental setting on, and while content shows. */
-const termTrayOn = () =>
-  builtinSupported() &&
-  delivery.latest?.preferences?.builtinTerminal === true &&
-  !delivery.latest?.preferences?.privacy;
+const termTrayOn = (prefs = delivery.latest?.preferences) =>
+  builtinSupported() && prefs?.builtinTerminal === true && !prefs?.privacy;
 let trayTermShown: boolean | undefined;
 /** Tray labels are rebuilt whenever the office language changes (or the terminal setting does). */
-function buildTray() {
+function buildTray(prefs = delivery.latest?.preferences) {
   if (!tray || tray.isDestroyed()) return;
   const t = m().desktop.tray;
-  trayTermShown = termTrayOn();
+  trayTermShown = termTrayOn(prefs);
   tray.setToolTip(t.tooltip);
   tray.setContextMenu(
     Menu.buildFromTemplate([
