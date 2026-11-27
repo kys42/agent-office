@@ -59,6 +59,7 @@ export const CARD_TRAFFIC_LIGHTS = { x: 16, y: 22 };
  * window: titled, in the taskbar, Mission Control and ⌘` window cycling, on the one desktop
  * (Space) it was opened on. On macOS it keeps the card's glass and draws only the traffic lights
  * over the card's header (the header moves it); Windows and Linux give it their own frame.
+ * A macOS card panel takes a click even while another app is active (`acceptFirstMouse`).
  */
 export function cardWindowStyle(
   platform: NodeJS.Platform,
@@ -88,6 +89,11 @@ export function cardWindowStyle(
           visualEffectState: 'active' as const,
           roundedCorners: true,
           type: 'panel' as const,
+          // A panel never activates the app, so while another app stays active (activation
+          // refused or skipped: `cardActivatesApp`) every click on it would be an inactive
+          // window's first click, which macOS only uses to bring the window forward: none would
+          // reach the card. Like the desk panel, it takes them as they come (#429).
+          acceptFirstMouse: true,
         }
       : {}),
   };

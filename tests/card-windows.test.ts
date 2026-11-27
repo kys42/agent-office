@@ -117,14 +117,18 @@ test('A card panel activates the app only when no other window could pull it to 
     // The big office (or a plain pinned card) shown, maybe on another Space: stay on this one.
     assert.equal(cardActivatesApp(pin, [dock, office]), false, pin);
     // Those are the macOS panels: made non-activating when created.
-    assert.equal(cardWindowStyle('darwin', cardOwnWindow(pin), 'popover', false).type, 'panel');
+    const panel = cardWindowStyle('darwin', cardOwnWindow(pin), 'popover', false);
+    assert.equal(panel.type, 'panel');
+    // A panel never activates the app: with another app active, every click on it is a first
+    // click, and the card must still take it (the send button, the text box: #429).
+    assert.equal(panel.acceptFirstMouse, true, pin);
   }
   // An ordinary app window takes the keys only while its app is active: always.
   assert.equal(cardActivatesApp('window', [dock, office]), true);
-  assert.equal(
-    cardWindowStyle('darwin', cardOwnWindow('window'), 'popover', false).type,
-    undefined,
-  );
+  const own = cardWindowStyle('darwin', cardOwnWindow('window'), 'popover', false);
+  assert.equal(own.type, undefined);
+  // An ordinary window: its first click activates the app, as any app window's does.
+  assert.equal(own.acceptFirstMouse, undefined);
 });
 
 test('Only a plain pinned card is an ordinary window; the preview and on-top pin float', () => {
