@@ -29,16 +29,19 @@ type Status = 'connecting' | 'live' | 'away' | 'ended' | 'error';
  * `embedded`: drawn inside the terminal manager (TermManager), which owns the window's own
  * buttons (on top, close). Its commands name the session, so main never attaches or ends one
  * the manager has already switched away from. `onTitle`: the title its program sets (OSC 0/2)
- * as it changes, for the manager's row name.
+ * as it changes, for the manager's row name. `heading`: the name shown in the bar instead of
+ * the session's own title (the manager's row name: nickname, session title, …).
  */
 export default function TermPanel({
   target,
   embedded = false,
   onTitle,
+  heading,
 }: {
   target: TermTarget;
   embedded?: boolean;
   onTitle?: (title: string) => void;
+  heading?: string;
 }) {
   const titleRef = useRef(onTitle);
   titleRef.current = onTitle;
@@ -313,7 +316,7 @@ export default function TermPanel({
         <span className="mini-shell-icon" title={t.shell.term.hint}>
           <SquareTerminal size={13} aria-hidden />
         </span>
-        <b title={target.title}>{target.title}</b>
+        <b title={heading || target.title}>{heading || target.title}</b>
         <span className="mini-shell-path" title={target.cwd}>
           {target.cwd}
         </span>

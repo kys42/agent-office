@@ -214,6 +214,8 @@ test('lists the sessions, shows the newest live and previews the others', async 
   await expect(first).toHaveAttribute('aria-current', 'true');
   await expect.poll(() => screenText(page)).toContain('restored-ao-1');
   expect(await live(page)).toEqual(['ao-1']);
+  // The terminal's bar carries the row's name, not the program and folder.
+  await expect(page.locator('.term-manager-view .mini-shell-bar b')).toHaveText('버터');
   // The others: a few rows of their screen; the selected and the ended one have none.
   await expect(nav.locator('li[data-term-session="ao-2"] .term-manager-preview')).toContainText(
     'ao-2 earlier',
