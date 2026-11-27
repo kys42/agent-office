@@ -410,6 +410,12 @@ export function TermManagerWindow() {
                 key={target.session}
                 target={target}
                 embedded
+                heading={(() => {
+                  const row = rows.find((r) => r.id === target.session);
+                  return row
+                    ? termRowTitle(row, previews[row.id], hidden, shortPath)?.text
+                    : undefined;
+                })()}
                 onTitle={(title) => titleChanged(target.session, title)}
               />
             </Suspense>
